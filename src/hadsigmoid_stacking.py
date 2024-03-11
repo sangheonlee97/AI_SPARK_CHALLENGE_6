@@ -190,7 +190,7 @@ def get_unet(nClasses, input_height=256, input_width=256, n_filters = 16, dropou
     u9 = Dropout(dropout)(u9)
     c9 = conv2d_block(u9, n_filters=n_filters*1, kernel_size=3, batchnorm=batchnorm)
     
-    outputs = Conv2D(1, (1, 1), activation='sigmoid') (c9)
+    outputs = Conv2D(1, (1, 1), activation='hard_sigmoid') (c9)
     model = Model(inputs=[input_img], outputs=[outputs])
     return model
     
@@ -222,7 +222,7 @@ def get_unet_small1 (nClasses, input_height=128, input_width=128, n_filters = 16
     u9 = Dropout(dropout)(u9)
     c9 = conv2d_block(u9, n_filters * 1, kernel_size = 3, batchnorm = batchnorm)
 
-    outputs = Conv2D(1, (1, 1), activation='relu')(c9)
+    outputs = Conv2D(1, (1, 1), activation='hard_sigmoid')(c9)
     model = Model(inputs=[input_img], outputs=[outputs])
     return model
 
@@ -246,7 +246,7 @@ def get_unet_small2 (nClasses, input_height=128, input_width=128, n_filters = 16
     u3 = Dropout(dropout)(u3)
     c3 = conv2d_block(u3, n_filters * 1, kernel_size = 3, batchnorm = batchnorm)
     
-    outputs = Conv2D(1, (1, 1), activation='relu')(c3)
+    outputs = Conv2D(1, (1, 1), activation='hard_sigmoid')(c3)
     model = Model(inputs=[input_img], outputs=[outputs])
     return model
 
@@ -295,12 +295,12 @@ test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
 
 
 # 저장 이름
-save_name = 'iou'
+save_name = 'stack'
 
 N_FILTERS = 16 # 필터수 지정
 N_CHANNELS = 3 # channel 지정
-EPOCHS = 150 # 훈련 epoch 지정
-BATCH_SIZE = 32 # batch size 지정
+EPOCHS = 100 # 훈련 epoch 지정
+BATCH_SIZE = 16 # batch size 지정
 IMAGE_SIZE = (256, 256) # 이미지 크기 지정
 MODEL_NAME = 'unet' # 모델 이름
 RANDOM_STATE = 42 # seed 고정
@@ -390,9 +390,8 @@ class IoU(keras.metrics.Metric):
 
 
 # model 불러오기
-model = get_model(MODEL_NAME, input_height=IMAGE_SIZE[0], input_width=IMAGE_SIZE[1], n_filters=N_FILTERS, n_channels=N_CHANNELS)
-model.compile(optimizer = Adam(), loss = 'binary_crossentropy', metrics=['accuracy', IoU()])
-model.summary()
+model1 = get_model(MODEL_NAME, input_height=IMAGE_SIZE[0], input_width=IMAGE_SIZE[1], n_filters=N_FILTERS, n_channels=N_CHANNELS)
+model1.compile(optimizer = Adam(), loss = 'binary_crossentropy', metrics=['accuracy', IoU()])
 
 
 # checkpoint 및 조기종료 설정
@@ -401,7 +400,7 @@ checkpoint = ModelCheckpoint(os.path.join(OUTPUT_DIR, CHECKPOINT_MODEL_NAME), mo
 save_best_only=True, mode='auto', period=CHECKPOINT_PERIOD)
 
 print('---model 훈련 시작---')
-history = model.fit_generator(
+history = model1.fit_generator(
     train_generator,
     steps_per_epoch=len(images_train) // BATCH_SIZE,
     validation_data=validation_generator,
@@ -414,10 +413,122 @@ history = model.fit_generator(
 print('---model 훈련 종료---')
 
 print('가중치 저장')
-model_weights_output = os.path.join(OUTPUT_DIR, FINAL_WEIGHTS_OUTPUT)
-model.save_weights(model_weights_output)
+model_weights_output = os.path.join(OUTPUT_DIR , "model1/", FINAL_WEIGHTS_OUTPUT)
+model1.save_weights(model_weights_output)
 print("저장된 가중치 명: {}".format(model_weights_output))
 
+
+
+# model 불러오기
+model2 = get_model('unet_small', input_height=IMAGE_SIZE[0], input_width=IMAGE_SIZE[1], n_filters=N_FILTERS, n_channels=N_CHANNELS)
+model2.compile(optimizer = Adam(), loss = 'binary_crossentropy', metrics=['accuracy', IoU()])
+
+
+# checkpoint 및 조기종료 설정
+es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STOP_PATIENCE)
+checkpoint = ModelCheckpoint(os.path.join(OUTPUT_DIR, CHECKPOINT_MODEL_NAME), monitor='val_loss', verbose=1,
+save_best_only=True, mode='auto', period=CHECKPOINT_PERIOD)
+
+print('---model 훈련 시작---')
+history = model2.fit_generator(
+    train_generator,
+    steps_per_epoch=len(images_train) // BATCH_SIZE,
+    validation_data=validation_generator,
+    validation_steps=len(images_validation) // BATCH_SIZE,
+    callbacks=[checkpoint, es],
+    epochs=EPOCHS,
+    workers=WORKERS,
+    initial_epoch=INITIAL_EPOCH
+)
+print('---model 훈련 종료---')
+
+print('가중치 저장')
+model_weights_output = os.path.join(OUTPUT_DIR, "model2/" , FINAL_WEIGHTS_OUTPUT)
+model2.save_weights(model_weights_output)
+print("저장된 가중치 명: {}".format(model_weights_output))
+
+
+
+
+# model 불러오기
+model3 = get_model('unet_smaller', input_height=IMAGE_SIZE[0], input_width=IMAGE_SIZE[1], n_filters=N_FILTERS, n_channels=N_CHANNELS)
+model3.compile(optimizer = Adam(), loss = 'binary_crossentropy', metrics=['accuracy', IoU()])
+
+
+# checkpoint 및 조기종료 설정
+es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STOP_PATIENCE)
+checkpoint = ModelCheckpoint(os.path.join(OUTPUT_DIR, CHECKPOINT_MODEL_NAME), monitor='val_loss', verbose=1,
+save_best_only=True, mode='auto', period=CHECKPOINT_PERIOD)
+
+print('---model 훈련 시작---')
+history = model3.fit_generator(
+    train_generator,
+    steps_per_epoch=len(images_train) // BATCH_SIZE,
+    validation_data=validation_generator,
+    validation_steps=len(images_validation) // BATCH_SIZE,
+    callbacks=[checkpoint, es],
+    epochs=EPOCHS,
+    workers=WORKERS,
+    initial_epoch=INITIAL_EPOCH
+)
+print('---model 훈련 종료---')
+
+print('가중치 저장')
+model_weights_output = os.path.join(OUTPUT_DIR, "model3/" , FINAL_WEIGHTS_OUTPUT)
+model3.save_weights(model_weights_output)
+print("저장된 가중치 명: {}".format(model_weights_output))
+
+
+
+
+models = [model1, model2, model3]
+
+def stack(gen, length, models):
+    preds = []
+
+    for model in models:
+        pred = model.predict_generator(gen, steps=length, workers=WORKERS)
+        preds.append(pred)
+    
+    return preds
+
+train_preds = stack(train_generator, len(images_train) // BATCH_SIZE, models)
+val_preds = stack(validation_generator, len(images_validation) // BATCH_SIZE, models)
+
+train_true_list = []
+val_true_list = []
+
+for i in range(len(images_train) // BATCH_SIZE):
+    _, y_true_batch = next(train_generator)
+    train_true_list.append(y_true_batch)
+
+# y_true를 numpy 배열로 변환
+train_true = np.concatenate(train_true_list, axis=0)
+
+for i in range(len(images_validation) // BATCH_SIZE):
+    _, y_true_batch = next(validation_generator)
+    val_true_list.append(y_true_batch)
+
+# y_true를 numpy 배열로 변환
+train_true = np.concatenate(train_true_list, axis=0)
+
+# xgb의 입력값으로 사용하기 위해 차원 변환
+train_preds_np = np.concatenate(train_preds, axis=-1).reshape(-1, len(models))
+
+# y_true를 numpy 배열로 변환
+val_true = np.concatenate(val_true_list, axis=0)
+
+# xgb의 입력값으로 사용하기 위해 차원 변환
+val_preds_np = np.concatenate(val_preds, axis=-1).reshape(-1, len(models))
+
+from xgboost import XGBClassifier
+xgb = XGBClassifier(objective="binary:logistic", random_state=42)
+xgb.set_params(early_stopping_rounds=10)
+xgb.fit(train_preds_np, train_true, eval_set=[(val_preds_np, val_true)])
+
+print("score : ", xgb.score(val_preds_np, val_true))
+
+'''
 # model = get_model(MODEL_NAME, input_height=IMAGE_SIZE[0], input_width=IMAGE_SIZE[1], n_filters=N_FILTERS, n_channels=N_CHANNELS)
 # model.compile(optimizer = Adam(), loss = 'binary_crossentropy', metrics = ['accuracy'])
 # model.summary()
@@ -436,4 +547,4 @@ for i in test_meta['test_img']:
 
 joblib.dump(y_pred_dict, './y_pred.pkl')
 
-#### f1 스코어를 사용해보자
+#### f1 스코어를 사용해보자'''
