@@ -125,9 +125,9 @@ save_name = 'asdf'
 N_FILTERS = 16 # 필터수 지정
 N_CHANNELS = 3 # channel 지정
 EPOCHS = 200 # 훈련 epoch 지정
-BATCH_SIZE = 16 # batch size 지정
+BATCH_SIZE = 32 # batch size 지정
 IMAGE_SIZE = (256, 256) # 이미지 크기 지정
-MODEL_NAME = 'swin_transformer' # 모델 이름
+MODEL_NAME = 'trans_unet' # 모델 이름
 RANDOM_STATE = 42 # seed 고정
 INITIAL_EPOCH = 0 # 초기 epoch
 
@@ -140,7 +140,7 @@ OUTPUT_DIR = '../resource/dataset/train_output/'
 WORKERS = -2
 
 # 조기종료
-EARLY_STOP_PATIENCE = 12
+EARLY_STOP_PATIENCE = 13
 
 # 중간 가중치 저장 이름
 CHECKPOINT_PERIOD = 5
@@ -190,10 +190,10 @@ validation_generator = generator_from_lists(images_validation, masks_validation,
 
 
 
-model = models.swin_unet_2d((256, 256, 3), filter_num_begin=32, n_labels=1, depth=4, stack_num_down=2, stack_num_up=2, 
-                            patch_size=(2, 2), num_heads=[4, 8, 8, 8], window_size=[4, 2, 2, 2], num_mlp=384, 
-                            output_activation='Sigmoid', shift_window=True, name='swin_unet')
-
+model = models.transunet_2d((256, 256, 3), filter_num=[32, 64, 128, 256], n_labels=1, stack_num_down=2, stack_num_up=2,
+                                embed_dim=256, num_mlp=512, num_heads=4, num_transformer=4,
+                                activation='ReLU', mlp_activation='GELU', output_activation='Sigmoid', 
+                                batch_norm=True, pool=True, unpool='bilinear', name='transunet', backbone='VGG19')
 model.summary()
 
 model.compile(
@@ -206,7 +206,7 @@ es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STO
 mcp = ModelCheckpoint(monitor='val_loss', mode='min', verbose=1, save_best_only=True, filepath=CHECKPOINT_MODEL_NAME)
 rlr = ReduceLROnPlateau(
     monitor='val_loss',
-    patience=4,
+    patience=5,
     verbose=1,
     factor=0.5
 )
@@ -222,8 +222,8 @@ model.fit_generator(
 )
 
 print('가중치 저장')
-model.save_weights('../resource/weights/swin_transformer.h5')
-print("저장된 가중치 명: swin_transformer.h5")
+model.save_weights('../resource/weights/trans_unet.h5')
+print("저장된 가중치 명: trans_unet.h5")
 
 y_pred_dict = {}
 
@@ -235,5 +235,5 @@ for i in test_meta['test_img']:
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './y_pred_st.pkl')
+joblib.dump(y_pred_dict, './y_pred_tu.pkl')
 print("done")
