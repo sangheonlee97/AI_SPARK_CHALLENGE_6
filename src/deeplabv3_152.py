@@ -1,4 +1,4 @@
-from keras.applications import ResNet50
+from keras.applications import ResNet50, ResNet152
 from keras.models import Model
 from keras.layers import *
 import segmentation_models as sm
@@ -149,7 +149,7 @@ N_CHANNELS = 3 # channel 지정
 EPOCHS = 200 # 훈련 epoch 지정
 BATCH_SIZE = 32 # batch size 지정
 IMAGE_SIZE = (256, 256) # 이미지 크기 지정
-MODEL_NAME = 'resnet50' # 모델 이름
+MODEL_NAME = 'resnet152' # 모델 이름
 RANDOM_STATE = 32 # seed 고정
 INITIAL_EPOCH = 0 # 초기 epoch
 
@@ -167,6 +167,7 @@ EARLY_STOP_PATIENCE = 11
 # 중간 가중치 저장 이름
 CHECKPOINT_PERIOD = 5
 CHECKPOINT_MODEL_NAME = './mcp/checkpoint-{}-{}-epoch_{{epoch:02d}}.hdf5'.format(MODEL_NAME, save_name)
+# CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}.hdf5'.format(MODEL_NAME, save_name)
 
 # 최종 가중치 저장 이름
 FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_final_weights.h5'.format(MODEL_NAME, save_name)
@@ -248,11 +249,11 @@ def DeepLabV3Plus(shape):
     """ Inputs """
     inputs = Input(shape)
 
-    """ Pre-trained ResNet50 """
-    base_model = ResNet50(weights='imagenet', include_top=False, input_tensor=inputs)
+    """ Pre-trained ResNet152 """
+    base_model = ResNet152(weights='imagenet', include_top=False, input_tensor=inputs)
     base_model.trainable = False
     
-    """ Pre-trained ResNet50 Output """
+    """ Pre-trained ResNet152 Output """
     image_features = base_model.get_layer('conv4_block6_out').output
     x_a = ASPP(image_features)
     x_a = UpSampling2D((4, 4), interpolation="bilinear")(x_a)
@@ -315,8 +316,8 @@ model.fit_generator(
 )
 
 print('가중치 저장')
-model.save_weights('../resource/weights/dl.h5')
-print("저장된 가중치 명: dl.h5")
+model.save_weights('../resource/weights/dl152.h5')
+print("저장된 가중치 명: dl152.h5")
 
 y_pred_dict = {}
 

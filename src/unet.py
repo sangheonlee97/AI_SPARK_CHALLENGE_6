@@ -163,7 +163,7 @@ EARLY_STOP_PATIENCE = 11
 
 # 중간 가중치 저장 이름
 CHECKPOINT_PERIOD = 5
-CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}.hdf5'.format(MODEL_NAME, save_name)
+CHECKPOINT_MODEL_NAME = './mcp/checkpoint-{}-{}-epoch_{{epoch:02d}}.hdf5'.format(MODEL_NAME, save_name)
 
 # 최종 가중치 저장 이름
 FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_final_weights.h5'.format(MODEL_NAME, save_name)
@@ -245,12 +245,12 @@ model.fit_generator(
     validation_steps=len(images_validation) // BATCH_SIZE,
     epochs=EPOCHS,
     workers=WORKERS,
-    callbacks=[es,rlr],
+    callbacks=[es,rlr,mcp],
 )
 
 print('가중치 저장')
-model.save_weights('../resource/weights/resnet152_yespre.h5')
-print("저장된 가중치 명: resnet152_yespre.h5")
+model.save_weights('../resource/weights/Unet_resnet152_yespre.h5')
+print("저장된 가중치 명: Unet_resnet152_yespre.h5")
 
 y_pred_dict = {}
 
