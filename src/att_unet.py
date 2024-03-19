@@ -282,7 +282,7 @@ def get_model(model_name, nClasses=1, input_height=128, input_width=128, n_filte
     
     
 # model = get_model(MODEL_NAME, input_height=256, input_width=256, n_filters=8, n_channels=N_CHANNELS)
-model = models.att_unet_2d(input_size=(256,256,3), filter_num=[32,64, 128, 256], n_labels=2, activation='ReLU', output_activation='Sigmoid', batch_norm=True, backbone='VGG16', weights='imagenet',)
+model = models.att_unet_2d(input_size=(256,256,3), filter_num=[64, 128, 256, 512], n_labels=2, activation='ReLU', output_activation='Sigmoid', batch_norm=True, backbone='VGG16', weights='imagenet',)
 model.compile(
     'Adam',
     loss=sm.losses.bce_jaccard_loss,
