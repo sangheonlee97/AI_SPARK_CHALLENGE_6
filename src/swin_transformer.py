@@ -140,7 +140,7 @@ OUTPUT_DIR = '../resource/dataset/train_output/'
 WORKERS = -2
 
 # 조기종료
-EARLY_STOP_PATIENCE = 12
+EARLY_STOP_PATIENCE = 5
 
 # 중간 가중치 저장 이름
 CHECKPOINT_PERIOD = 5
@@ -198,7 +198,7 @@ model.summary()
 
 model.compile(
     'Adam',
-    loss=sm.losses.bce_jaccard_loss,
+    loss='binary_crossentropy',
     metrics=[sm.metrics.iou_score],
 )
 
@@ -206,7 +206,7 @@ es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STO
 mcp = ModelCheckpoint(monitor='val_loss', mode='min', verbose=1, save_best_only=True, filepath=CHECKPOINT_MODEL_NAME)
 rlr = ReduceLROnPlateau(
     monitor='val_loss',
-    patience=4,
+    patience=2,
     verbose=1,
     factor=0.5
 )

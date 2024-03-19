@@ -29,7 +29,6 @@ from keras import backend as K
 from sklearn.model_selection import train_test_split 
 import joblib
 tf.random.set_seed(42)
-from tensorflow import keras
 from keras_unet_collection import models
 
 MAX_PIXEL_VALUE = 65535 # 이미지 정규화를 위한 픽셀 최대값
@@ -87,7 +86,7 @@ def generator_from_lists(images_path, masks_path, batch_size=32, shuffle = True,
     if image_mode == '762':
         fopen_image = get_img_762bands
 
-    i = 0
+    i = 0 
     # 데이터 shuffle
     while True:
         
@@ -111,10 +110,7 @@ def generator_from_lists(images_path, masks_path, batch_size=32, shuffle = True,
                 images = []
                 masks = []
                 
-
-
-# 사용할 데이터의 meta정보 가져오기
-
+                
 train_meta = pd.read_csv('../resource/dataset/train_meta.csv')
 test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
 
@@ -127,8 +123,8 @@ N_CHANNELS = 3 # channel 지정
 EPOCHS = 200 # 훈련 epoch 지정
 BATCH_SIZE = 32 # batch size 지정
 IMAGE_SIZE = (256, 256) # 이미지 크기 지정
-MODEL_NAME = 'trans_unet' # 모델 이름
-RANDOM_STATE = 42 # seed 고정
+MODEL_NAME = 'pretrained_attention_unet' # 모델 이름
+RANDOM_STATE = 32 # seed 고정
 INITIAL_EPOCH = 0 # 초기 epoch
 
 # 데이터 위치
@@ -140,7 +136,7 @@ OUTPUT_DIR = '../resource/dataset/train_output/'
 WORKERS = -2
 
 # 조기종료
-EARLY_STOP_PATIENCE = 13
+EARLY_STOP_PATIENCE = 11
 
 # 중간 가중치 저장 이름
 CHECKPOINT_PERIOD = 5
@@ -175,8 +171,7 @@ except:
 
 
 # train : val = 8 : 2 나누기
-x_tr, x_val = train_test_split(train_meta, test_size=0.15, random_state=RANDOM_STATE)
-print(len(x_tr), len(x_val))
+x_tr, x_val = train_test_split(train_meta, test_size=0.2, random_state=RANDOM_STATE)
 
 # train : val 지정 및 generator
 images_train = [os.path.join(IMAGES_PATH, image) for image in x_tr['train_img'] ]
@@ -187,26 +182,120 @@ masks_validation = [os.path.join(MASKS_PATH, mask) for mask in x_val['train_mask
 
 train_generator = generator_from_lists(images_train, masks_train, batch_size=BATCH_SIZE, random_state=RANDOM_STATE, image_mode="762")
 validation_generator = generator_from_lists(images_validation, masks_validation, batch_size=BATCH_SIZE, random_state=RANDOM_STATE, image_mode="762")
+#############################################모델################################################
 
+#Default Conv2D
+def conv2d_block(input_tensor, n_filters, kernel_size = 3, batchnorm = True):
+    # first layer
+    x = Conv2D(filters=n_filters, kernel_size=(kernel_size, kernel_size), kernel_initializer="he_normal",
+               padding="same")(input_tensor)
+    if batchnorm:
+        x = BatchNormalization()(x)
+    x = Activation("relu")(x)
 
+    # second layer
+    x = Conv2D(filters=n_filters, kernel_size=(kernel_size, kernel_size), kernel_initializer="he_normal",
+               padding="same")(x)
+    if batchnorm:
+        x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+    return x
 
-model = models.transunet_2d((256, 256, 3), filter_num=[32, 64, 128, 256], n_labels=1, stack_num_down=2, stack_num_up=2,
-                                embed_dim=256, num_mlp=512, num_heads=4, num_transformer=4,
-                                activation='ReLU', mlp_activation='GELU', output_activation='Sigmoid', 
-                                batch_norm=True, pool=True, unpool='bilinear', name='transunet', backbone='EfficientNetB0')
-model.summary()
+#Attention Gate
+def attention_gate(F_g, F_l, inter_channel):
+    """
+    An attention gate.
 
+    Arguments:
+    - F_g: Gating signal typically from a coarser scale.
+    - F_l: The feature map from the skip connection.
+    - inter_channel: The number of channels/filters in the intermediate layer.
+    """
+    # Intermediate transformation on the gating signal
+    W_g = Conv2D(inter_channel, kernel_size=1, strides=1, padding='same', kernel_initializer='he_normal')(F_g)
+    W_g = BatchNormalization()(W_g)
+
+    # Intermediate transformation on the skip connection feature map
+    W_x = Conv2D(inter_channel, kernel_size=1, strides=1, padding='same', kernel_initializer='he_normal')(F_l)
+    W_x = BatchNormalization()(W_x)
+
+    # Combine the transformations
+    psi = Activation('relu')(add([W_g, W_x]))
+    psi = Conv2D(1, kernel_size=1, strides=1, padding='same', kernel_initializer='he_normal')(psi)
+    psi = BatchNormalization()(psi)
+    psi = Activation('sigmoid')(psi)
+
+    # Apply the attention coefficients to the feature map from the skip connection
+    return multiply([F_l, psi])
+
+from keras.applications import VGG16
+def get_pretrained_attention_unet(input_height=256, input_width=256, nClasses=1, n_filters=16, dropout=0.5, batchnorm=True, n_channels=3):
+    base_model = VGG16(weights='imagenet', include_top=False, input_shape=(input_height, input_width, n_channels))
+    
+    # Define the inputs
+    inputs = base_model.input
+    
+    # Use specific layers from the VGG16 model for skip connections
+    s1 = base_model.get_layer("block1_conv2").output
+    s2 = base_model.get_layer("block2_conv2").output
+    s3 = base_model.get_layer("block3_conv3").output
+    s4 = base_model.get_layer("block4_conv3").output
+    bridge = base_model.get_layer("block5_conv3").output
+    
+    # Decoder with attention gates
+    d1 = UpSampling2D((2, 2))(bridge)
+    d1 = concatenate([d1, attention_gate(d1, s4, n_filters*8)])
+    d1 = conv2d_block(d1, n_filters*8, kernel_size=3, batchnorm=batchnorm)
+    
+    d2 = UpSampling2D((2, 2))(d1)
+    d2 = concatenate([d2, attention_gate(d2, s3, n_filters*4)])
+    d2 = conv2d_block(d2, n_filters*4, kernel_size=3, batchnorm=batchnorm)
+    
+    d3 = UpSampling2D((2, 2))(d2)
+    d3 = concatenate([d3, attention_gate(d3, s2, n_filters*2)])
+    d3 = conv2d_block(d3, n_filters*2, kernel_size=3, batchnorm=batchnorm)
+    
+    d4 = UpSampling2D((2, 2))(d3)
+    d4 = concatenate([d4, attention_gate(d4, s1, n_filters)])
+    d4 = conv2d_block(d4, n_filters, kernel_size=3, batchnorm=batchnorm)
+    
+    outputs = Conv2D(nClasses, (1, 1), activation='sigmoid')(d4)
+    model = Model(inputs=[inputs], outputs=[outputs])
+    return model
+
+def get_model(model_name, nClasses=1, input_height=128, input_width=128, n_filters = 16, dropout = 0.1, batchnorm = True, n_channels=10):
+    
+    if model_name == 'pretrained_attention_unet':
+        model = get_pretrained_attention_unet
+        
+        
+    return model(
+            nClasses      = nClasses,
+            input_height  = input_height,
+            input_width   = input_width,
+            n_filters     = n_filters,
+            dropout       = dropout,
+            batchnorm     = batchnorm,
+            n_channels    = n_channels
+        )
+    
+    
+    
+# model = get_model(MODEL_NAME, input_height=256, input_width=256, n_filters=8, n_channels=N_CHANNELS)
+model = models.att_unet_2d(input_size=(256,256,3), filter_num=[32,64, 128, 256], n_labels=2, activation='ReLU', output_activation='Sigmoid', batch_norm=True, backbone='VGG16', weights='imagenet',)
 model.compile(
     'Adam',
     loss=sm.losses.bce_jaccard_loss,
     metrics=[sm.metrics.iou_score],
 )
 
+model.summary()
+
 es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STOP_PATIENCE,)
 mcp = ModelCheckpoint(monitor='val_loss', mode='min', verbose=1, save_best_only=True, filepath=CHECKPOINT_MODEL_NAME)
 rlr = ReduceLROnPlateau(
     monitor='val_loss',
-    patience=5,
+    patience=4,
     verbose=1,
     factor=0.5
 )
@@ -222,18 +311,18 @@ model.fit_generator(
 )
 
 print('가중치 저장')
-model.save_weights('../resource/weights/trans_unet.h5')
-print("저장된 가중치 명: trans_unet.h5")
+model.save_weights('../resource/weights/kogn.h5')
+print("저장된 가중치 명: kogn.h5")
 
 y_pred_dict = {}
 
 for i in test_meta['test_img']:
-    img = get_img_762bands(f'../resource/dataset/test_img/{i}')
+    img = get_img_762bands(f'../resource/dataset/test_img/{i}') # 나중에 여기도 preprocessing 해줘야되는데, 일단 가중치 저장하고 하자
     y_pred = model.predict(np.array([img]), batch_size=1)
     
     y_pred = np.where(y_pred[0, :, :, 0] > 0.25, 1, 0) # 임계값 처리
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './y_pred_tu.pkl')
+joblib.dump(y_pred_dict, './y_pred2.pkl')
 print("done")
