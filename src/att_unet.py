@@ -121,7 +121,7 @@ save_name = 'asdf'
 N_FILTERS = 16 # 필터수 지정
 N_CHANNELS = 3 # channel 지정
 EPOCHS = 200 # 훈련 epoch 지정
-BATCH_SIZE = 32 # batch size 지정
+BATCH_SIZE = 8 # batch size 지정
 IMAGE_SIZE = (256, 256) # 이미지 크기 지정
 MODEL_NAME = 'pretrained_attention_unet' # 모델 이름
 RANDOM_STATE = 32 # seed 고정
@@ -191,14 +191,14 @@ def conv2d_block(input_tensor, n_filters, kernel_size = 3, batchnorm = True):
                padding="same")(input_tensor)
     if batchnorm:
         x = BatchNormalization()(x)
-    x = Activation("relu")(x)
+    x = Activation("swish")(x)
 
     # second layer
     x = Conv2D(filters=n_filters, kernel_size=(kernel_size, kernel_size), kernel_initializer="he_normal",
                padding="same")(x)
     if batchnorm:
         x = BatchNormalization()(x)
-    x = Activation("relu")(x)
+    x = Activation("swish")(x)
     return x
 
 #Attention Gate
@@ -220,7 +220,7 @@ def attention_gate(F_g, F_l, inter_channel):
     W_x = BatchNormalization()(W_x)
 
     # Combine the transformations
-    psi = Activation('relu')(add([W_g, W_x]))
+    psi = Activation('swish')(add([W_g, W_x]))
     psi = Conv2D(1, kernel_size=1, strides=1, padding='same', kernel_initializer='he_normal')(psi)
     psi = BatchNormalization()(psi)
     psi = Activation('sigmoid')(psi)
@@ -263,7 +263,7 @@ def get_pretrained_attention_unet(input_height=256, input_width=256, nClasses=1,
     model = Model(inputs=[inputs], outputs=[outputs])
     return model
 
-def get_model(model_name, nClasses=1, input_height=128, input_width=128, n_filters = 16, dropout = 0.1, batchnorm = True, n_channels=10):
+def get_model(model_name, nClasses=1, input_height=256, input_width=256, n_filters = 16, dropout = 0.1, batchnorm = True, n_channels=10):
     
     if model_name == 'pretrained_attention_unet':
         model = get_pretrained_attention_unet
@@ -280,9 +280,9 @@ def get_model(model_name, nClasses=1, input_height=128, input_width=128, n_filte
         )
     
     
-    
-# model = get_model(MODEL_NAME, input_height=256, input_width=256, n_filters=8, n_channels=N_CHANNELS)
-model = models.att_unet_2d(input_size=(256,256,3), filter_num=[64, 128, 256, 512], n_labels=2, activation='ReLU', output_activation='Sigmoid', batch_norm=True, backbone='VGG16', weights='imagenet',)
+# model = get_model(MODEL_NAME, input_height=IMAGE_SIZE[0], input_width=IMAGE_SIZE[1], n_filters=N_FILTERS, n_channels=N_CHANNELS)
+model = get_model(MODEL_NAME, input_height=256, input_width=256, n_filters=8, n_channels=N_CHANNELS)
+# model = models.att_unet_2d(input_size=(256,256,3), filter_num=[64, 128, 256, 512], n_labels=1, activation='ReLU', output_activation='Sigmoid', batch_norm=True, backbone='VGG16', weights='imagenet',)
 model.compile(
     'Adam',
     loss=sm.losses.bce_jaccard_loss,
@@ -291,13 +291,13 @@ model.compile(
 
 model.summary()
 
-es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STOP_PATIENCE,)
+es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STOP_PATIENCE, restore_best_weights=True)
 mcp = ModelCheckpoint(monitor='val_loss', mode='min', verbose=1, save_best_only=True, filepath=CHECKPOINT_MODEL_NAME)
 rlr = ReduceLROnPlateau(
     monitor='val_loss',
-    patience=4,
+    patience=3,
     verbose=1,
-    factor=0.5
+    factor=0.3
 )
 
 model.fit_generator(
@@ -324,5 +324,5 @@ for i in test_meta['test_img']:
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './y_pred2.pkl')
+joblib.dump(y_pred_dict, './kogn.pkl')
 print("done")
