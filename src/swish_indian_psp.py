@@ -1,5 +1,5 @@
 
-from keras.layers import Input, Convolution2D, BatchNormalization, Activation, LeakyReLU, Add, ReLU, GlobalAveragePooling2D, Reshape, AveragePooling2D, UpSampling2D, Flatten
+from keras.layers import Input, Convolution2D, BatchNormalization, Activation, LeakyReLU, Add, ReLU, GlobalAveragePooling2D, Reshape, AveragePooling2D, UpSampling2D, Flatten, GlobalMaxPooling2D, MaxPooling2D
 from keras.models import Model
 import tensorflow as tf
 # from keras_self_attention import SeqSelfAttention
@@ -94,7 +94,7 @@ def miou(y_true, y_pred, smooth=1e-6):
     return miou
 
 @threadsafe_generator
-def generator_from_lists(images_path, masks_path, batch_size=32, shuffle = True, random_state=None, image_mode='10bands'):
+def generator_from_lists(images_path, masks_path, batch_size=32, shuffle = True, random_state=None, image_mode='762'):
    
     images = []
     masks = []
@@ -193,20 +193,20 @@ def pyramid_feature_maps(input_layer):
     
     base = base_feature_maps(input_layer)
     # red
-    red = GlobalAveragePooling2D(name='red_pool')(base)
+    red = GlobalMaxPooling2D(name='red_pool')(base)
     red = tf.keras.layers.Reshape((1,1,256))(red)
     red = Convolution2D(filters=32,kernel_size=(1,1),name='red_1_by_1')(red)
     red = UpSampling2D(size=256,interpolation='bilinear',name='red_upsampling')(red)
     # yellow
-    yellow = AveragePooling2D(pool_size=(2,2),name='yellow_pool')(base)
+    yellow = MaxPooling2D(pool_size=(2,2),name='yellow_pool')(base)
     yellow = Convolution2D(filters=32,kernel_size=(1,1),name='yellow_1_by_1')(yellow)
     yellow = UpSampling2D(size=2,interpolation='bilinear',name='yellow_upsampling')(yellow)
     # blue
-    blue = AveragePooling2D(pool_size=(4,4),name='blue_pool')(base)
+    blue = MaxPooling2D(pool_size=(4,4),name='blue_pool')(base)
     blue = Convolution2D(filters=32,kernel_size=(1,1),name='blue_1_by_1')(blue)
     blue = UpSampling2D(size=4,interpolation='bilinear',name='blue_upsampling')(blue)
     # green
-    green = AveragePooling2D(pool_size=(8,8),name='green_pool')(base)
+    green = MaxPooling2D(pool_size=(8,8),name='green_pool')(base)
     green = Convolution2D(filters=32,kernel_size=(1,1),name='green_1_by_1')(green)
     green = UpSampling2D(size=8,interpolation='bilinear',name='green_upsampling')(green)
     # base + red + yellow + blue + green
@@ -244,7 +244,7 @@ train_meta = pd.read_csv('../resource/dataset/train_meta.csv')
 test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
 
 #  저장 이름
-save_name = 'indian0318'
+save_name = 'indian0320'
 
 N_FILTERS = 22 # 필터수 지정
 N_CHANNELS = 3 # channel 지정
@@ -269,10 +269,10 @@ EARLY_STOP_PATIENCE = 11
 
 # 중간 가중치 저장 이름
 CHECKPOINT_PERIOD = 1
-CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}indian0319Swi.hdf5'.format(MODEL_NAME, save_name)
+CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}indian0320Swi.hdf5'.format(MODEL_NAME, save_name)
  
 # 최종 가중치 저장 이름
-FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_indian0319Swi.h5'.format(MODEL_NAME, save_name)
+FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_indian0320swi.h5'.format(MODEL_NAME, save_name)
 
 # 사용할 GPU 이름
 CUDA_DEVICE = 0
@@ -356,12 +356,12 @@ model_weights_output = os.path.join(OUTPUT_DIR, FINAL_WEIGHTS_OUTPUT)
 model.save_weights(model_weights_output)
 print("저장된 가중치 명: {}".format(model_weights_output))
 
-# model.load_weights('C:\\_data\\dataset\\output\\checkpoint-concat-indian2-epoch_80indian0316_2.hdf5')
+# model.load_weights('../resource/weights/model_psp_indian0318_indian0319Swi.h5')
 
 y_pred_dict = {}
 
 for i in test_meta['test_img']:
-    img = get_img_762bands(f'C:\\_data\\dataset\\test_img\\{i}')
+    img = get_img_762bands(f'../resource/dataset/test_img/{i}')
     y_pred = model.predict(np.array([img]), batch_size=1)
     
     y_pred = np.where(y_pred[0, :, :, 0] > 0.25, 1, 0) # 임계값 처리
