@@ -174,7 +174,9 @@ def conv_block(X, filters, block):
     X_skip = BatchNormalization(name=b + 'batch_norm_skip_conv')(X_skip)
     # block_c + skip_conv
     X = Add(name=b + 'add')([X, X_skip])
-    X = ReLU(name=b + 'relu')(X)
+    # X = ReLU(name=b + 'relu')(X)
+    X = SwishActivation(name=b + 'swish_activation_add')(X)
+    
     return X
     
 def base_feature_maps(input_layer):
@@ -248,7 +250,7 @@ train_meta = pd.read_csv('../resource/dataset/train_meta.csv')
 test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
 
 #  저장 이름
-save_name = 'indian1b1'
+save_name = 'indian1b1p2'
 
 N_FILTERS = 22 # 필터수 지정
 N_CHANNELS = 3 # channel 지정
@@ -268,15 +270,15 @@ OUTPUT_DIR = '../resource/weights/'
 WORKERS = -3
 
 # 조기종료
-EARLY_STOP_PATIENCE = 11
+EARLY_STOP_PATIENCE = 9
 
 
 # 중간 가중치 저장 이름
 CHECKPOINT_PERIOD = 1
-CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}indianswi1b1.hdf5'.format(MODEL_NAME, save_name)
+CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}indianswi1b1p2.hdf5'.format(MODEL_NAME, save_name)
  
 # 최종 가중치 저장 이름
-FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_indianswi1b1.h5'.format(MODEL_NAME, save_name)
+FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_indianswi1b1p2.h5'.format(MODEL_NAME, save_name)
 
 # 사용할 GPU 이름
 CUDA_DEVICE = 0
@@ -303,7 +305,7 @@ except:
 
 
 # train : val = 8 : 2 나누기
-x_tr, x_val = train_test_split(train_meta, test_size=0.15, random_state=RANDOM_STATE)
+x_tr, x_val = train_test_split(train_meta, test_size=0.2, random_state=RANDOM_STATE)
 print(len(x_tr), len(x_val))
 
 # train : val 지정 및 generator
@@ -326,10 +328,10 @@ checkpoint = ModelCheckpoint(os.path.join(OUTPUT_DIR, CHECKPOINT_MODEL_NAME), mo
 save_best_only=True)
 
 rlr = ReduceLROnPlateau(monitor='val_loss',             # 통상 early_stopping patience보다 작다
-                        patience=3,
+                        patience=2,
                         mode='min',
                         verbose=1,
-                        factor=0.5,
+                        factor=0.7,
                         # 통상 디폴트보다 높게 잡는다?
                         )
 
@@ -363,6 +365,6 @@ for i in test_meta['test_img']:
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './psp.pkl')
+joblib.dump(y_pred_dict, './psp2.pkl')
 
 print('done')
