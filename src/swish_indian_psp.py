@@ -174,7 +174,9 @@ def conv_block(X, filters, block):
     X_skip = BatchNormalization(name=b + 'batch_norm_skip_conv')(X_skip)
     # block_c + skip_conv
     X = Add(name=b + 'add')([X, X_skip])
-    X = ReLU(name=b + 'relu')(X)
+    # X = ReLU(name=b + 'relu')(X)
+    X = SwishActivation(name=b + 'swish_activation_add')(X)
+    
     return X
     
 def base_feature_maps(input_layer):
@@ -193,20 +195,20 @@ def pyramid_feature_maps(input_layer):
     
     base = base_feature_maps(input_layer)
     # red
-    red = GlobalMaxPooling2D(name='red_pool')(base)
+    red = GlobalAveragePooling2D(name='red_pool')(base)
     red = tf.keras.layers.Reshape((1,1,256))(red)
     red = Convolution2D(filters=32,kernel_size=(1,1),name='red_1_by_1')(red)
     red = UpSampling2D(size=256,interpolation='bilinear',name='red_upsampling')(red)
     # yellow
-    yellow = MaxPooling2D(pool_size=(2,2),name='yellow_pool')(base)
+    yellow = AveragePooling2D(pool_size=(2,2),name='yellow_pool')(base)
     yellow = Convolution2D(filters=32,kernel_size=(1,1),name='yellow_1_by_1')(yellow)
     yellow = UpSampling2D(size=2,interpolation='bilinear',name='yellow_upsampling')(yellow)
     # blue
-    blue = MaxPooling2D(pool_size=(4,4),name='blue_pool')(base)
+    blue = AveragePooling2D(pool_size=(4,4),name='blue_pool')(base)
     blue = Convolution2D(filters=32,kernel_size=(1,1),name='blue_1_by_1')(blue)
     blue = UpSampling2D(size=4,interpolation='bilinear',name='blue_upsampling')(blue)
     # green
-    green = MaxPooling2D(pool_size=(8,8),name='green_pool')(base)
+    green = AveragePooling2D(pool_size=(8,8),name='green_pool')(base)
     green = Convolution2D(filters=32,kernel_size=(1,1),name='green_1_by_1')(green)
     green = UpSampling2D(size=8,interpolation='bilinear',name='green_upsampling')(green)
     # base + red + yellow + blue + green
@@ -214,9 +216,13 @@ def pyramid_feature_maps(input_layer):
 
 def last_conv_module(input_layer):
     X = pyramid_feature_maps(input_layer)
-    X = Convolution2D(filters=1,kernel_size=3,padding='same',name='last_conv_3_by_3')(X)
-    X = BatchNormalization(name='last_conv_3_by_3_batch_norm')(X)
+    # X = Convolution2D(filters=1,kernel_size=3,padding='same',name='last_conv_3_by_3')(X)
+    # X = BatchNormalization(name='last_conv_3_by_3_batch_norm')(X)
+    # X = Activation('sigmoid',name='last_conv_sigmoid')(X)
+    X = Convolution2D(filters=1,kernel_size=1,padding='same',name='last_conv_1_by_1')(X)
+    X = BatchNormalization(name='last_conv_1_by_1_batch_norm')(X)
     X = Activation('sigmoid',name='last_conv_sigmoid')(X)
+    
     # X = tf.keras.layers.Flatten(name='last_conv_flatten')(X)
     return X
 
@@ -244,7 +250,7 @@ train_meta = pd.read_csv('../resource/dataset/train_meta.csv')
 test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
 
 #  저장 이름
-save_name = 'indian0320'
+save_name = 'indian1b1p2'
 
 N_FILTERS = 22 # 필터수 지정
 N_CHANNELS = 3 # channel 지정
@@ -264,15 +270,15 @@ OUTPUT_DIR = '../resource/weights/'
 WORKERS = -3
 
 # 조기종료
-EARLY_STOP_PATIENCE = 11
+EARLY_STOP_PATIENCE = 9
 
 
 # 중간 가중치 저장 이름
 CHECKPOINT_PERIOD = 1
-CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}indian0320Swi.hdf5'.format(MODEL_NAME, save_name)
+CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}indianswi1b1p2.hdf5'.format(MODEL_NAME, save_name)
  
 # 최종 가중치 저장 이름
-FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_indian0320swi.h5'.format(MODEL_NAME, save_name)
+FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_indianswi1b1p2.h5'.format(MODEL_NAME, save_name)
 
 # 사용할 GPU 이름
 CUDA_DEVICE = 0
@@ -299,7 +305,7 @@ except:
 
 
 # train : val = 8 : 2 나누기
-x_tr, x_val = train_test_split(train_meta, test_size=0.15, random_state=RANDOM_STATE)
+x_tr, x_val = train_test_split(train_meta, test_size=0.2, random_state=RANDOM_STATE)
 print(len(x_tr), len(x_val))
 
 # train : val 지정 및 generator
@@ -312,15 +318,6 @@ masks_validation = [os.path.join(MASKS_PATH, mask) for mask in x_val['train_mask
 train_generator = generator_from_lists(images_train, masks_train, batch_size=BATCH_SIZE, random_state=RANDOM_STATE, image_mode="762")
 validation_generator = generator_from_lists(images_validation, masks_validation, batch_size=BATCH_SIZE, random_state=RANDOM_STATE, image_mode="762")
 
-
-# model 불러오기
-# model = get_model(MODEL_NAME, input_height=IMAGE_SIZE[0], input_width=IMAGE_SIZE[1], n_filters=N_FILTERS, n_channels=N_CHANNELS)
-# model.compile(optimizer = Adam(), loss = 'binary_crossentropy', metrics = ['accuracy'])
-# model.summary()
-
-# model = get_attention_unet()
-# model = get_model(MODEL_NAME, nClasses=1, input_height=IMAGE_SIZE[0], input_width=IMAGE_SIZE[1], n_filters=N_FILTERS, n_channels=N_CHANNELS)
-# learning_rate = 0.005
 model.compile(optimizer=Adam(), loss=sm.losses.bce_jaccard_loss, metrics=[sm.metrics.iou_score])
 model.summary()
 
@@ -331,10 +328,10 @@ checkpoint = ModelCheckpoint(os.path.join(OUTPUT_DIR, CHECKPOINT_MODEL_NAME), mo
 save_best_only=True)
 
 rlr = ReduceLROnPlateau(monitor='val_loss',             # 통상 early_stopping patience보다 작다
-                        patience=3,
+                        patience=2,
                         mode='min',
                         verbose=1,
-                        factor=0.5,
+                        factor=0.7,
                         # 통상 디폴트보다 높게 잡는다?
                         )
 
@@ -368,6 +365,6 @@ for i in test_meta['test_img']:
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './psp.pkl')
+joblib.dump(y_pred_dict, './psp2.pkl')
 
 print('done')
