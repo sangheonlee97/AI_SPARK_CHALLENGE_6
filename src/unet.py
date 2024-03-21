@@ -206,7 +206,7 @@ masks_validation = [os.path.join(MASKS_PATH, mask) for mask in x_val['train_mask
 
 train_generator = generator_from_lists(images_train, masks_train, batch_size=BATCH_SIZE, random_state=RANDOM_STATE, image_mode="762")
 validation_generator = generator_from_lists(images_validation, masks_validation, batch_size=BATCH_SIZE, random_state=RANDOM_STATE, image_mode="762")
-
+sm.losses.
 #######################################################################
 BACKBONE = 'resnet152'
 preprocess_input = sm.get_preprocessing(BACKBONE)
