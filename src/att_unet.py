@@ -240,14 +240,14 @@ def get_pretrained_attention_unet(input_height=256, input_width=256, nClasses=1,
     s2 = base_model.get_layer("block2_conv2").output
     s3 = base_model.get_layer("block3_conv3").output
     s4 = base_model.get_layer("block4_conv3").output
-    bridge = base_model.get_layer("block5_conv3").output
+    # bridge = base_model.get_layer("block5_conv3").output
     
     # Decoder with attention gates
-    d1 = UpSampling2D((2, 2))(bridge)
-    d1 = concatenate([d1, attention_gate(d1, s4, n_filters*8)])
-    d1 = conv2d_block(d1, n_filters*8, kernel_size=3, batchnorm=batchnorm)
-    
-    d2 = UpSampling2D((2, 2))(d1)
+    # d1 = UpSampling2D((2, 2))(bridge)
+    # d1 = concatenate([d1, attention_gate(d1, s4, n_filters*8)])
+    # d1 = conv2d_block(d1, n_filters*8, kernel_size=3, batchnorm=batchnorm)
+    # 풀링 한방씩 제거
+    d2 = UpSampling2D((2, 2))(s4)
     d2 = concatenate([d2, attention_gate(d2, s3, n_filters*4)])
     d2 = conv2d_block(d2, n_filters*4, kernel_size=3, batchnorm=batchnorm)
     
