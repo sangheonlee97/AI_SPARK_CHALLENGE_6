@@ -1,8 +1,4 @@
-
-from keras.layers import Input, Convolution2D, BatchNormalization, Activation, LeakyReLU, Add, ReLU, GlobalAveragePooling2D, Reshape, AveragePooling2D, UpSampling2D, Flatten, GlobalMaxPooling2D, MaxPooling2D
-from keras.models import Model
-import tensorflow as tf
-# from keras_self_attention import SeqSelfAttention
+import segmentation_models as sm
 import os
 import warnings
 warnings.filterwarnings("ignore")
@@ -26,20 +22,16 @@ import os
 import numpy as np
 import sys
 from sklearn.utils import shuffle as shuffle_lists
-from keras.models import Model
-from keras.layers import Input, Conv2D, BatchNormalization, Activation, UpSampling2D, Concatenate, DepthwiseConv2D
-from keras.applications import MobileNetV2
 from keras.models import *
 from keras.layers import *
 import numpy as np
 from keras import backend as K
-from sklearn.model_selection import train_test_split
-import segmentation_models as sm
+from sklearn.model_selection import train_test_split 
 import joblib
 tf.random.set_seed(42)
-np.random.seed(42)
+from keras_unet_collection import models
+
 MAX_PIXEL_VALUE = 65535 # 이미지 정규화를 위한 픽셀 최대값
-THESHOLDS = 0.25
 
 class threadsafe_iter:
     """
@@ -70,7 +62,7 @@ def get_img_arr(path):
     return img
 
 def get_img_762bands(path):
-    img = rasterio.open(path).read((7,6,2)).transpose((1, 2, 0))    
+    img = rasterio.open(path).read((7,6,5)).transpose((1, 2, 0))    
     img = np.float32(img)/MAX_PIXEL_VALUE
     
     return img
@@ -80,21 +72,10 @@ def get_mask_arr(path):
     seg = np.float32(img)
     return seg
 
-#miou metric
-def miou(y_true, y_pred, smooth=1e-6):
-    # 임계치 기준으로 이진화
-    y_pred = tf.cast(y_pred > THESHOLDS, tf.float32)
-    
-    intersection = tf.reduce_sum(y_true * y_pred, axis=[1, 2, 3])
-    union = tf.reduce_sum(y_true, axis=[1, 2, 3]) + tf.reduce_sum(y_pred, axis=[1, 2, 3]) - intersection
-    
-    # mIoU 계산
-    iou = (intersection + smooth) / (union + smooth)
-    miou = tf.reduce_mean(iou)
-    return miou
+
 
 @threadsafe_generator
-def generator_from_lists(images_path, masks_path, batch_size=32, shuffle = True, random_state=None, image_mode='762'):
+def generator_from_lists(images_path, masks_path, batch_size=32, shuffle = True, random_state=None, image_mode='10bands'):
    
     images = []
     masks = []
@@ -128,11 +109,167 @@ def generator_from_lists(images_path, masks_path, batch_size=32, shuffle = True,
                 yield (np.array(images), np.array(masks))
                 images = []
                 masks = []
+                
+                
+train_meta = pd.read_csv('../resource/dataset/train_meta.csv')
+test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
 
-###########################################################################
 
-from keras.layers import Layer
-import keras.backend as K
+# 저장 이름
+save_name = 'sang'
+
+N_FILTERS = 16 # 필터수 지정
+N_CHANNELS = 3 # channel 지정
+EPOCHS = 200 # 훈련 epoch 지정
+BATCH_SIZE = 32 # batch size 지정
+IMAGE_SIZE = (256, 256) # 이미지 크기 지정
+MODEL_NAME = 'pretrained_attention_unet' # 모델 이름
+RANDOM_STATE = 42 # seed 고정
+INITIAL_EPOCH = 0 # 초기 epoch
+
+# 데이터 위치
+IMAGES_PATH = '../resource/dataset/train_img/'
+MASKS_PATH = '../resource/dataset/train_mask/'
+
+# 가중치 저장 위치
+OUTPUT_DIR = '../resource/dataset/train_output/'
+WORKERS = -2
+
+# 조기종료
+EARLY_STOP_PATIENCE = 11
+
+# 중간 가중치 저장 이름
+CHECKPOINT_PERIOD = 5
+CHECKPOINT_MODEL_NAME = './mcp/checkpoint-{}-{}-epoch_{{epoch:02d}}.hdf5'.format(MODEL_NAME, save_name)
+
+# 최종 가중치 저장 이름
+FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_final_weights.h5'.format(MODEL_NAME, save_name)
+
+# 사용할 GPU 이름
+CUDA_DEVICE = 0
+
+
+# 저장 폴더 없으면 생성
+if not os.path.exists(OUTPUT_DIR):
+    os.makedirs(OUTPUT_DIR)
+
+
+# GPU 설정
+os.environ["CUDA_VISIBLE_DEVICES"] = str(CUDA_DEVICE)
+try:
+    config = tf.compat.v1.ConfigProto()
+    config.gpu_options.allow_growth = True
+    sess = tf.compat.v1.Session(config=config)
+    K.set_session(sess)
+except:
+    pass
+
+try:
+    np.random.bit_generator = np.random._bit_generator
+except:
+    pass
+
+
+# train : val = 8 : 2 나누기
+x_tr, x_val = train_test_split(train_meta, test_size=0.2, random_state=RANDOM_STATE)
+
+# train : val 지정 및 generator
+images_train = [os.path.join(IMAGES_PATH, image) for image in x_tr['train_img'] ]
+masks_train = [os.path.join(MASKS_PATH, mask) for mask in x_tr['train_mask'] ]
+
+images_validation = [os.path.join(IMAGES_PATH, image) for image in x_val['train_img'] ]
+masks_validation = [os.path.join(MASKS_PATH, mask) for mask in x_val['train_mask'] ]
+
+train_generator = generator_from_lists(images_train, masks_train, batch_size=BATCH_SIZE, random_state=RANDOM_STATE, image_mode="762")
+validation_generator = generator_from_lists(images_validation, masks_validation, batch_size=BATCH_SIZE, random_state=RANDOM_STATE, image_mode="762")
+#############################################모델################################################
+
+#Default Conv2D
+def conv2d_block(input_tensor, n_filters, kernel_size = 3, batchnorm = True):
+    # first layer
+    x = Conv2D(filters=n_filters, kernel_size=(kernel_size, kernel_size), kernel_initializer="he_normal",
+               padding="same")(input_tensor)
+    if batchnorm:
+        x = BatchNormalization()(x)
+    x = Activation("swish")(x)
+
+    # second layer
+    x = Conv2D(filters=n_filters, kernel_size=(kernel_size, kernel_size), kernel_initializer="he_normal",
+               padding="same")(x)
+    if batchnorm:
+        x = BatchNormalization()(x)
+    x = Activation("swish")(x)
+    return x
+
+#Attention Gate
+def attention_gate(F_g, F_l, inter_channel):
+    """
+    An attention gate.
+
+    Arguments:
+    - F_g: Gating signal typically from a coarser scale.
+    - F_l: The feature map from the skip connection.
+    - inter_channel: The number of channels/filters in the intermediate layer.
+    """
+    # Intermediate transformation on the gating signal
+    W_g = Conv2D(inter_channel, kernel_size=1, strides=1, padding='same', kernel_initializer='he_normal')(F_g)
+    W_g = BatchNormalization()(W_g)
+
+    # Intermediate transformation on the skip connection feature map
+    W_x = Conv2D(inter_channel, kernel_size=1, strides=1, padding='same', kernel_initializer='he_normal')(F_l)
+    W_x = BatchNormalization()(W_x)
+
+    # Combine the transformations
+    psi = Activation('swish')(add([W_g, W_x]))
+    psi = Conv2D(1, kernel_size=1, strides=1, padding='same', kernel_initializer='he_normal')(psi)
+    psi = BatchNormalization()(psi)
+    psi = Activation('sigmoid')(psi)
+
+    # Apply the attention coefficients to the feature map from the skip connection
+    return multiply([F_l, psi])
+
+from keras.applications import VGG16
+
+def mymodel(f):
+    inp = Input(shape=(256,256,3))
+    c1 = Conv2D(filters=f*1, kernel_size=(3, 3), padding='same',)(inp)
+    c1 = BatchNormalization()(c1)
+    c1 = Activation("swish")(c1)
+    c1 = Conv2D(filters=f*1, kernel_size=(3, 3), padding='same', )(c1)
+    c1 = BatchNormalization()(c1)
+    c1 = Activation("swish")(c1)
+    p1 = MaxPooling2D()(c1)
+    c2 = Conv2D(filters=f*2, kernel_size=(3, 3), padding='same', )(p1)
+    c2 = BatchNormalization()(c2)
+    c2 = Activation("swish")(c2)
+    c2 = Conv2D(filters=f*2, kernel_size=(3, 3), padding='same', )(c2)
+    c2 = BatchNormalization()(c2)
+    c2 = Activation("swish")(c2)
+    p2 = MaxPooling2D()(c2)
+    c3 = Conv2D(filters=f*4, kernel_size=(3, 3), padding='same', )(p2)
+    c3 = BatchNormalization()(c3)
+    c3 = Activation("swish")(c3)
+    c3 = Conv2D(filters=f*4, kernel_size=(3, 3), padding='same', )(c3)
+    c3 = BatchNormalization()(c3)
+    c3 = Activation("swish")(c3)
+    p3 = MaxPooling2D()(c3)
+    c4 = Conv2D(filters=f*8, kernel_size=(3, 3), padding='same', )(p3)
+    c4 = BatchNormalization()(c4)
+    c4 = Activation("swish")(c4)
+    c4 = Conv2D(filters=f*8, kernel_size=(3, 3), padding='same', )(c4)
+    c4 = BatchNormalization()(c4)
+    c4 = Activation("swish")(c4)
+    p4 = MaxPooling2D()(c4)
+    c5 = Conv2D(filters=f*16, kernel_size=(3, 3), padding='same', )(p4)
+    c5 = BatchNormalization()(c5)
+    c5 = Activation("swish")(c5)
+    c5 = Conv2D(filters=f*16, kernel_size=(3, 3), padding='same', )(c5)
+    c5 = BatchNormalization()(c5)
+    c5 = Activation("swish")(c5)
+    
+    
+    return model
+
 class SwishActivation(Layer):
     def __init__(self, **kwargs):
         super(SwishActivation, self).__init__(**kwargs)
@@ -143,11 +280,6 @@ class SwishActivation(Layer):
     def get_config(self):
         config = super().get_config()
         return config
-    
-# conv_block 함수 내에서 SwishActivation을 사용하는 방법
-from keras.layers import Add, Conv2D, BatchNormalization, ReLU
-
-
 def conv_block(X, filters, block):
     # Residual block with dilated convolutions
     # Add skip connection at last after doing convolution operation to input X
@@ -174,200 +306,159 @@ def conv_block(X, filters, block):
     X_skip = BatchNormalization(name=b + 'batch_norm_skip_conv')(X_skip)
     # block_c + skip_conv
     X = Add(name=b + 'add')([X, X_skip])
-    X = ReLU(name=b + 'relu')(X)
+    # X = ReLU(name=b + 'relu')(X)
+    X = SwishActivation(name=b + 'swish_activation_add')(X)
+    
     return X
+def get_pretrained_attention_unet(input_height=256, input_width=256, nClasses=1, n_filters=16, dropout=0.5, batchnorm=True, n_channels=3):
+    # base_model = VGG16(weights='imagenet', include_top=False, input_shape=(input_height, input_width, n_channels))
+    # base_model.summary()
+    # Define the inputs
+    # inputs = base_model.input
     
-def base_feature_maps(input_layer):
-    # base covolution module to get input image feature maps 
+    # # Use specific layers from the VGG16 model for skip connections
+    # s1 = base_model.get_layer("block1_conv2").output
+    # s2 = base_model.get_layer("block2_conv2").output
+    # s3 = base_model.get_layer("block3_conv3").output
+    # s4 = base_model.get_layer("block4_conv3").output
+    # bridge = base_model.get_layer("block5_conv3").output
+    inp = Input(shape=(256,256,3))
+    c1 = conv_block(inp, [n_filters, n_filters, n_filters*2], '1')
+    # c1 = Conv2D(filters=n_filters*1, kernel_size=(3, 3), padding='same',)(inp)
+    # c1 = BatchNormalization()(c1)
+    # c1 = Activation("swish")(c1)
+    # c1 = Conv2D(filters=n_filters*1, kernel_size=(3, 3), padding='same',)(c1)
+    # c1 = BatchNormalization()(c1)
+    # c1 = Activation("swish")(c1)
+    # c1 = Conv2D(filters=n_filters*1, kernel_size=(3, 3), padding='same', )(c1)
+    # c1 = BatchNormalization()(c1)
+    # c1 = Activation("swish")(c1)
+    p1 = MaxPooling2D()(c1)
+    c2 = conv_block(p1, [n_filters, n_filters, n_filters*2], '2')
     
-    # block_1
-    base = conv_block(input_layer,[32,32,64],'1')
-    # block_2
-    base = conv_block(base,[64,64,128],'2')
-    # block_3
-    base = conv_block(base,[128,128,256],'3')
-    return base
-
-def pyramid_feature_maps(input_layer):
-    # pyramid pooling module
+    # c2 = Conv2D(filters=n_filters*2, kernel_size=(3, 3), padding='same', )(p1)
+    # c2 = BatchNormalization()(c2)
+    # c2 = Activation("swish")(c2)
+    # c2 = Conv2D(filters=n_filters*2, kernel_size=(3, 3), padding='same', )(c2)
+    # c2 = BatchNormalization()(c2)
+    # c2 = Activation("swish")(c2)
+    # c2 = Conv2D(filters=n_filters*2, kernel_size=(3, 3), padding='same', )(c2)
+    # c2 = BatchNormalization()(c2)
+    # c2 = Activation("swish")(c2)
+    p2 = MaxPooling2D()(c2)
+    c3 = conv_block(p2, [n_filters, n_filters, n_filters*2], '3')
+    # c3 = Conv2D(filters=n_filters*4, kernel_size=(3, 3), padding='same', )(p2)
+    # c3 = BatchNormalization()(c3)
+    # c3 = Activation("swish")(c3)
+    # c3 = Conv2D(filters=n_filters*4, kernel_size=(3, 3), padding='same', )(c3)
+    # c3 = BatchNormalization()(c3)
+    # c3 = Activation("swish")(c3)
+    # c3 = Conv2D(filters=n_filters*4, kernel_size=(3, 3), padding='same', )(c3)
+    # c3 = BatchNormalization()(c3)
+    # c3 = Activation("swish")(c3)
+    p3 = MaxPooling2D()(c3)
+    c4 = conv_block(p3, [n_filters, n_filters, n_filters*2], '4')
+    # c4 = Conv2D(filters=n_filters*8, kernel_size=(3, 3), padding='same', )(p3)
+    # c4 = BatchNormalization()(c4)
+    # c4 = Activation("swish")(c4)
+    # c4 = Conv2D(filters=n_filters*8, kernel_size=(3, 3), padding='same', )(c4)
+    # c4 = BatchNormalization()(c4)
+    # c4 = Activation("swish")(c4)
+    # c4 = Conv2D(filters=n_filters*8, kernel_size=(3, 3), padding='same', )(c4)
+    # c4 = BatchNormalization()(c4)
+    # c4 = Activation("swish")(c4)
+    p4 = MaxPooling2D()(c4)
+    bridge = conv_block(p4, [n_filters, n_filters, n_filters*2], '5')
+    # c5 = Conv2D(filters=n_filters*16, kernel_size=(3, 3), padding='same', )(p4)
+    # c5 = BatchNormalization()(c5)
+    # c5 = Activation("swish")(c5)
+    # c5 = Conv2D(filters=n_filters*16, kernel_size=(3, 3), padding='same', )(c5)
+    # c5 = BatchNormalization()(c5)
+    # c5 = Activation("swish")(c5)
+    # c5 = Conv2D(filters=n_filters*16, kernel_size=(3, 3), padding='same', )(c5)
+    # c5 = BatchNormalization()(c5)
+    # bridge = Activation("swish")(c5)
+    # Decoder with attention gates
+    d1 = UpSampling2D((2, 2))(bridge)
+    d1 = concatenate([d1, attention_gate(d1, c4, n_filters*8)])
+    d1 = conv2d_block(d1, n_filters*8, kernel_size=3, batchnorm=batchnorm)
+    # 풀링 한방씩 제거
+    d2 = UpSampling2D((2, 2))(d1)
+    d2 = concatenate([d2, attention_gate(d2, c3, n_filters*4)])
+    d2 = conv2d_block(d2, n_filters*4, kernel_size=3, batchnorm=batchnorm)
     
-    base = base_feature_maps(input_layer)
-    # red
-    red = GlobalMaxPooling2D(name='red_pool')(base)
-    red = tf.keras.layers.Reshape((1,1,256))(red)
-    red = Convolution2D(filters=32,kernel_size=(1,1),name='red_1_by_1')(red)
-    red = UpSampling2D(size=256,interpolation='bilinear',name='red_upsampling')(red)
-    # yellow
-    yellow = MaxPooling2D(pool_size=(2,2),name='yellow_pool')(base)
-    yellow = Convolution2D(filters=32,kernel_size=(1,1),name='yellow_1_by_1')(yellow)
-    yellow = UpSampling2D(size=2,interpolation='bilinear',name='yellow_upsampling')(yellow)
-    # blue
-    blue = MaxPooling2D(pool_size=(4,4),name='blue_pool')(base)
-    blue = Convolution2D(filters=32,kernel_size=(1,1),name='blue_1_by_1')(blue)
-    blue = UpSampling2D(size=4,interpolation='bilinear',name='blue_upsampling')(blue)
-    # green
-    green = MaxPooling2D(pool_size=(8,8),name='green_pool')(base)
-    green = Convolution2D(filters=32,kernel_size=(1,1),name='green_1_by_1')(green)
-    green = UpSampling2D(size=8,interpolation='bilinear',name='green_upsampling')(green)
-    # base + red + yellow + blue + green
-    return tf.keras.layers.concatenate([base,red,yellow,blue,green])
-
-def last_conv_module(input_layer):
-    X = pyramid_feature_maps(input_layer)
-    X = Convolution2D(filters=1,kernel_size=3,padding='same',name='last_conv_3_by_3')(X)
-    X = BatchNormalization(name='last_conv_3_by_3_batch_norm')(X)
-    X = Activation('sigmoid',name='last_conv_sigmoid')(X)
-    # X = tf.keras.layers.Flatten(name='last_conv_flatten')(X)
-    return X
-
-def build_model(input_shape):
-    # Input layer
-    input_layer = Input(shape=input_shape)
-
-    # Constructing the model
-    last_layer = last_conv_module(input_layer)
-
-    # Creating the model
-    model = Model(inputs=input_layer, outputs=last_layer)
-
+    d3 = UpSampling2D((2, 2))(d2)
+    d3 = concatenate([d3, attention_gate(d3, c2, n_filters*2)])
+    d3 = conv2d_block(d3, n_filters*2, kernel_size=3, batchnorm=batchnorm)
+    
+    d4 = UpSampling2D((2, 2))(d3)
+    d4 = concatenate([d4, attention_gate(d4, c1, n_filters)])
+    d4 = conv2d_block(d4, n_filters, kernel_size=3, batchnorm=batchnorm)
+    
+    outputs = Conv2D(nClasses, (1, 1), activation='sigmoid')(d4)
+    model = Model(inputs=[inp], outputs=[outputs])
     return model
 
-input_shape = (256, 256, 3)  # Replace height, width, and channels with actual values
-
-# Build the model
-model = build_model(input_shape)
-model.summary()
-
-# # 사용할 데이터의 meta정보 가져오기
-
-train_meta = pd.read_csv('../resource/dataset/train_meta.csv')
-test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
-
-#  저장 이름
-save_name = 'indian0318'
-
-N_FILTERS = 22 # 필터수 지정
-N_CHANNELS = 3 # channel 지정
-EPOCHS = 1000 # 훈련 epoch 지정
-BATCH_SIZE = 12  # batch size 지정
-IMAGE_SIZE = (256, 256) # 이미지 크기 지정
-MODEL_NAME = 'psp' # 모델 이름
-RANDOM_STATE = 42 # seed 고정
-INITIAL_EPOCH = 0 # 초기 epoch
-
-# 데이터 위치
-IMAGES_PATH = '../resource/dataset/train_img/'
-MASKS_PATH = '../resource/dataset/train_mask/'
-
-# 가중치 저장 위치
-OUTPUT_DIR = '../resource/weights/'
-WORKERS = -3
-
-# 조기종료
-EARLY_STOP_PATIENCE = 11
-
-
-# 중간 가중치 저장 이름
-CHECKPOINT_PERIOD = 1
-CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}indian0319Swi.hdf5'.format(MODEL_NAME, save_name)
- 
-# 최종 가중치 저장 이름
-FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_indian0319Swi.h5'.format(MODEL_NAME, save_name)
-
-# 사용할 GPU 이름
-CUDA_DEVICE = 0
-
-# 저장 폴더 없으면 생성
-if not os.path.exists(OUTPUT_DIR):
-    os.makedirs(OUTPUT_DIR)
-
-
-# GPU 설정
-os.environ["CUDA_VISIBLE_DEVICES"] = str(CUDA_DEVICE)
-try:
-    config = tf.compat.v1.ConfigProto()
-    config.gpu_options.allow_growth = True
-    sess = tf.compat.v1.Session(config=config)
-    K.set_session(sess)
-except:
-    pass
-
-try:
-    np.random.bit_generator = np.random._bit_generator
-except:
-    pass
-
-
-# train : val = 8 : 2 나누기
-x_tr, x_val = train_test_split(train_meta, test_size=0.15, random_state=RANDOM_STATE)
-print(len(x_tr), len(x_val))
-
-# train : val 지정 및 generator
-images_train = [os.path.join(IMAGES_PATH, image) for image in x_tr['train_img'] ]
-masks_train = [os.path.join(MASKS_PATH, mask) for mask in x_tr['train_mask'] ]
-
-images_validation = [os.path.join(IMAGES_PATH, image) for image in x_val['train_img'] ]
-masks_validation = [os.path.join(MASKS_PATH, mask) for mask in x_val['train_mask'] ]
-
-train_generator = generator_from_lists(images_train, masks_train, batch_size=BATCH_SIZE, random_state=RANDOM_STATE, image_mode="762")
-validation_generator = generator_from_lists(images_validation, masks_validation, batch_size=BATCH_SIZE, random_state=RANDOM_STATE, image_mode="762")
-
-
-# model 불러오기
+def get_model(model_name, nClasses=1, input_height=256, input_width=256, n_filters = 16, dropout = 0.1, batchnorm = True, n_channels=10):
+    
+    if model_name == 'pretrained_attention_unet':
+        model = get_pretrained_attention_unet
+        
+        
+    return model(
+            nClasses      = nClasses,
+            input_height  = input_height,
+            input_width   = input_width,
+            n_filters     = n_filters,
+            dropout       = dropout,
+            batchnorm     = batchnorm,
+            n_channels    = n_channels
+        )
+    
+    
 # model = get_model(MODEL_NAME, input_height=IMAGE_SIZE[0], input_width=IMAGE_SIZE[1], n_filters=N_FILTERS, n_channels=N_CHANNELS)
-# model.compile(optimizer = Adam(), loss = 'binary_crossentropy', metrics = ['accuracy'])
-# model.summary()
+model = get_model(MODEL_NAME, input_height=256, input_width=256, n_filters=32, n_channels=N_CHANNELS)
+# model = models.att_unet_2d(input_size=(256,256,3), filter_num=[64, 128, 256, 512], n_labels=1, activation='ReLU', output_activation='Sigmoid', batch_norm=True, backbone='VGG16', weights='imagenet',)
+model.compile(
+    'Adam',
+    loss=sm.losses.bce_jaccard_loss,
+    metrics=[sm.metrics.iou_score],
+)
 
-# model = get_attention_unet()
-# model = get_model(MODEL_NAME, nClasses=1, input_height=IMAGE_SIZE[0], input_width=IMAGE_SIZE[1], n_filters=N_FILTERS, n_channels=N_CHANNELS)
-# learning_rate = 0.005
-model.compile(optimizer=Adam(), loss=sm.losses.bce_jaccard_loss, metrics=[sm.metrics.iou_score])
 model.summary()
 
-# # checkpoint 및 조기종료 설정
-# es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STOP_PATIENCE, restore_best_weights=True)
-# # es = EarlyStopping(monitor='val_miou', mode='max', verbose=1, patience=EARLY_STOP_PATIENCE, restore_best_weights=True)
-# checkpoint = ModelCheckpoint(os.path.join(OUTPUT_DIR, CHECKPOINT_MODEL_NAME), monitor='val_loss', mode='min', verbose=1,
-# save_best_only=True)
+es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STOP_PATIENCE, restore_best_weights=True)
+mcp = ModelCheckpoint(monitor='val_loss', mode='min', verbose=1, save_best_only=True, filepath=CHECKPOINT_MODEL_NAME)
+rlr = ReduceLROnPlateau(
+    monitor='val_loss',
+    patience=2,
+    verbose=1,
+    factor=0.66
+)
 
-# rlr = ReduceLROnPlateau(monitor='val_loss',             # 통상 early_stopping patience보다 작다
-#                         patience=3,
-#                         mode='min',
-#                         verbose=1,
-#                         factor=0.5,
-#                         # 통상 디폴트보다 높게 잡는다?
-#                         )
-
-# print('---model 훈련 시작---')
-# history = model.fit_generator(
+# model.fit_generator(
 #     train_generator,
 #     steps_per_epoch=len(images_train) // BATCH_SIZE,
 #     validation_data=validation_generator,
 #     validation_steps=len(images_validation) // BATCH_SIZE,
-#     callbacks=[checkpoint, es, rlr],
 #     epochs=EPOCHS,
 #     workers=WORKERS,
-#     initial_epoch=INITIAL_EPOCH
+#     callbacks=[es,rlr,mcp],
 # )
-# print('---model 훈련 종료---')
 
-# print('가중치 저장')
-# model_weights_output = os.path.join(OUTPUT_DIR, FINAL_WEIGHTS_OUTPUT)
-# model.save_weights(model_weights_output)
-# print("저장된 가중치 명: {}".format(model_weights_output))
-
-model.load_weights('../resource/weights/checkpoint-psp-indian0320-epoch_15indian0320Swi.hdf5')
+print('가중치 저장')
+model.load_weights('./mcp/checkpoint-pretrained_attention_unet-sang-epoch_26.hdf5')
+print("저장된 가중치 명: sangn.h5")
 
 y_pred_dict = {}
 
 for i in test_meta['test_img']:
-    img = get_img_762bands(f'../resource/dataset/test_img/{i}')
+    img = get_img_762bands(f'../resource/dataset/test_img/{i}') # 나중에 여기도 preprocessing 해줘야되는데, 일단 가중치 저장하고 하자
     y_pred = model.predict(np.array([img]), batch_size=1)
     
     y_pred = np.where(y_pred[0, :, :, 0] > 0.25, 1, 0) # 임계값 처리
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './psp.pkl')
-
-print('done')
+joblib.dump(y_pred_dict, './sangn.pkl')
+print("done")

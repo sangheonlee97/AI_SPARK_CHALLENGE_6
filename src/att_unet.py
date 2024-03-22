@@ -62,7 +62,7 @@ def get_img_arr(path):
     return img
 
 def get_img_762bands(path):
-    img = rasterio.open(path).read((7,6,2)).transpose((1, 2, 0))    
+    img = rasterio.open(path).read((7,6,5)).transpose((1, 2, 0))    
     img = np.float32(img)/MAX_PIXEL_VALUE
     
     return img
@@ -116,7 +116,7 @@ test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
 
 
 # 저장 이름
-save_name = 'sang+'
+save_name = 'sang765'
 
 N_FILTERS = 16 # 필터수 지정
 N_CHANNELS = 3 # channel 지정
@@ -433,7 +433,7 @@ rlr = ReduceLROnPlateau(
     monitor='val_loss',
     patience=2,
     verbose=1,
-    factor=0.66
+    factor=0.33
 )
 
 model.fit_generator(
@@ -447,8 +447,8 @@ model.fit_generator(
 )
 
 print('가중치 저장')
-model.save_weights('../resource/weights/sangn.h5')
-print("저장된 가중치 명: sangn.h5")
+model.save_weights('../resource/weights/sangn765.h5')
+print("저장된 가중치 명: sangn765.h5")
 
 y_pred_dict = {}
 
@@ -460,5 +460,5 @@ for i in test_meta['test_img']:
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './sangn.pkl')
+joblib.dump(y_pred_dict, './sangn765.pkl')
 print("done")
