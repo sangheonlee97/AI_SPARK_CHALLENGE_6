@@ -116,7 +116,7 @@ test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
 
 
 # 저장 이름
-save_name = 'asdf3'
+save_name = 'sang+'
 
 N_FILTERS = 16 # 필터수 지정
 N_CHANNELS = 3 # channel 지정
@@ -124,7 +124,7 @@ EPOCHS = 200 # 훈련 epoch 지정
 BATCH_SIZE = 32 # batch size 지정
 IMAGE_SIZE = (256, 256) # 이미지 크기 지정
 MODEL_NAME = 'pretrained_attention_unet' # 모델 이름
-RANDOM_STATE = 32 # seed 고정
+RANDOM_STATE = 42 # seed 고정
 INITIAL_EPOCH = 0 # 초기 epoch
 
 # 데이터 위치
@@ -270,9 +270,49 @@ def mymodel(f):
     
     return model
 
+class SwishActivation(Layer):
+    def __init__(self, **kwargs):
+        super(SwishActivation, self).__init__(**kwargs)
+
+    def call(self, inputs):
+        return inputs * K.sigmoid(inputs)
+
+    def get_config(self):
+        config = super().get_config()
+        return config
+def conv_block(X, filters, block):
+    # Residual block with dilated convolutions
+    # Add skip connection at last after doing convolution operation to input X
+
+    b = 'block_' + str(block) + '_'
+    f1, f2, f3 = filters
+    X_skip = X
+    # block_a
+    X = Conv2D(filters=f1, kernel_size=(1, 1), dilation_rate=(1, 1),
+               padding='same', kernel_initializer='he_normal', name=b + 'a')(X)
+    X = BatchNormalization(name=b + 'batch_norm_a')(X)
+    X = SwishActivation(name=b + 'swish_activation_a')(X)
+    # block_b
+    X = Conv2D(filters=f2, kernel_size=(3, 3), dilation_rate=(2, 2),
+               padding='same', kernel_initializer='he_normal', name=b + 'b')(X)
+    X = BatchNormalization(name=b + 'batch_norm_b')(X)
+    X = SwishActivation(name=b + 'swish_activation_b')(X)
+    # block_c
+    X = Conv2D(filters=f3, kernel_size=(1, 1), dilation_rate=(1, 1),
+               padding='same', kernel_initializer='he_normal', name=b + 'c')(X)
+    X = BatchNormalization(name=b + 'batch_norm_c')(X)
+    # skip_conv
+    X_skip = Conv2D(filters=f3, kernel_size=(3, 3), padding='same', name=b + 'skip_conv')(X_skip)
+    X_skip = BatchNormalization(name=b + 'batch_norm_skip_conv')(X_skip)
+    # block_c + skip_conv
+    X = Add(name=b + 'add')([X, X_skip])
+    # X = ReLU(name=b + 'relu')(X)
+    X = SwishActivation(name=b + 'swish_activation_add')(X)
+    
+    return X
 def get_pretrained_attention_unet(input_height=256, input_width=256, nClasses=1, n_filters=16, dropout=0.5, batchnorm=True, n_channels=3):
-    base_model = VGG16(weights='imagenet', include_top=False, input_shape=(input_height, input_width, n_channels))
-    base_model.summary()
+    # base_model = VGG16(weights='imagenet', include_top=False, input_shape=(input_height, input_width, n_channels))
+    # base_model.summary()
     # Define the inputs
     # inputs = base_model.input
     
@@ -283,40 +323,61 @@ def get_pretrained_attention_unet(input_height=256, input_width=256, nClasses=1,
     # s4 = base_model.get_layer("block4_conv3").output
     # bridge = base_model.get_layer("block5_conv3").output
     inp = Input(shape=(256,256,3))
-    c1 = Conv2D(filters=n_filters*1, kernel_size=(3, 3), padding='same',)(inp)
-    c1 = BatchNormalization()(c1)
-    c1 = Activation("swish")(c1)
-    c1 = Conv2D(filters=n_filters*1, kernel_size=(3, 3), padding='same', )(c1)
-    c1 = BatchNormalization()(c1)
-    c1 = Activation("swish")(c1)
+    c1 = conv_block(inp, [n_filters, n_filters, n_filters*2], '1')
+    # c1 = Conv2D(filters=n_filters*1, kernel_size=(3, 3), padding='same',)(inp)
+    # c1 = BatchNormalization()(c1)
+    # c1 = Activation("swish")(c1)
+    # c1 = Conv2D(filters=n_filters*1, kernel_size=(3, 3), padding='same',)(c1)
+    # c1 = BatchNormalization()(c1)
+    # c1 = Activation("swish")(c1)
+    # c1 = Conv2D(filters=n_filters*1, kernel_size=(3, 3), padding='same', )(c1)
+    # c1 = BatchNormalization()(c1)
+    # c1 = Activation("swish")(c1)
     p1 = MaxPooling2D()(c1)
-    c2 = Conv2D(filters=n_filters*2, kernel_size=(3, 3), padding='same', )(p1)
-    c2 = BatchNormalization()(c2)
-    c2 = Activation("swish")(c2)
-    c2 = Conv2D(filters=n_filters*2, kernel_size=(3, 3), padding='same', )(c2)
-    c2 = BatchNormalization()(c2)
-    c2 = Activation("swish")(c2)
+    c2 = conv_block(p1, [n_filters, n_filters, n_filters*2], '2')
+    
+    # c2 = Conv2D(filters=n_filters*2, kernel_size=(3, 3), padding='same', )(p1)
+    # c2 = BatchNormalization()(c2)
+    # c2 = Activation("swish")(c2)
+    # c2 = Conv2D(filters=n_filters*2, kernel_size=(3, 3), padding='same', )(c2)
+    # c2 = BatchNormalization()(c2)
+    # c2 = Activation("swish")(c2)
+    # c2 = Conv2D(filters=n_filters*2, kernel_size=(3, 3), padding='same', )(c2)
+    # c2 = BatchNormalization()(c2)
+    # c2 = Activation("swish")(c2)
     p2 = MaxPooling2D()(c2)
-    c3 = Conv2D(filters=n_filters*4, kernel_size=(3, 3), padding='same', )(p2)
-    c3 = BatchNormalization()(c3)
-    c3 = Activation("swish")(c3)
-    c3 = Conv2D(filters=n_filters*4, kernel_size=(3, 3), padding='same', )(c3)
-    c3 = BatchNormalization()(c3)
-    c3 = Activation("swish")(c3)
+    c3 = conv_block(p2, [n_filters, n_filters, n_filters*2], '3')
+    # c3 = Conv2D(filters=n_filters*4, kernel_size=(3, 3), padding='same', )(p2)
+    # c3 = BatchNormalization()(c3)
+    # c3 = Activation("swish")(c3)
+    # c3 = Conv2D(filters=n_filters*4, kernel_size=(3, 3), padding='same', )(c3)
+    # c3 = BatchNormalization()(c3)
+    # c3 = Activation("swish")(c3)
+    # c3 = Conv2D(filters=n_filters*4, kernel_size=(3, 3), padding='same', )(c3)
+    # c3 = BatchNormalization()(c3)
+    # c3 = Activation("swish")(c3)
     p3 = MaxPooling2D()(c3)
-    c4 = Conv2D(filters=n_filters*8, kernel_size=(3, 3), padding='same', )(p3)
-    c4 = BatchNormalization()(c4)
-    c4 = Activation("swish")(c4)
-    c4 = Conv2D(filters=n_filters*8, kernel_size=(3, 3), padding='same', )(c4)
-    c4 = BatchNormalization()(c4)
-    c4 = Activation("swish")(c4)
+    c4 = conv_block(p3, [n_filters, n_filters, n_filters*2], '4')
+    # c4 = Conv2D(filters=n_filters*8, kernel_size=(3, 3), padding='same', )(p3)
+    # c4 = BatchNormalization()(c4)
+    # c4 = Activation("swish")(c4)
+    # c4 = Conv2D(filters=n_filters*8, kernel_size=(3, 3), padding='same', )(c4)
+    # c4 = BatchNormalization()(c4)
+    # c4 = Activation("swish")(c4)
+    # c4 = Conv2D(filters=n_filters*8, kernel_size=(3, 3), padding='same', )(c4)
+    # c4 = BatchNormalization()(c4)
+    # c4 = Activation("swish")(c4)
     p4 = MaxPooling2D()(c4)
-    c5 = Conv2D(filters=n_filters*16, kernel_size=(3, 3), padding='same', )(p4)
-    c5 = BatchNormalization()(c5)
-    c5 = Activation("swish")(c5)
-    c5 = Conv2D(filters=n_filters*16, kernel_size=(3, 3), padding='same', )(c5)
-    c5 = BatchNormalization()(c5)
-    bridge = Activation("swish")(c5)
+    bridge = conv_block(p4, [n_filters, n_filters, n_filters*2], '5')
+    # c5 = Conv2D(filters=n_filters*16, kernel_size=(3, 3), padding='same', )(p4)
+    # c5 = BatchNormalization()(c5)
+    # c5 = Activation("swish")(c5)
+    # c5 = Conv2D(filters=n_filters*16, kernel_size=(3, 3), padding='same', )(c5)
+    # c5 = BatchNormalization()(c5)
+    # c5 = Activation("swish")(c5)
+    # c5 = Conv2D(filters=n_filters*16, kernel_size=(3, 3), padding='same', )(c5)
+    # c5 = BatchNormalization()(c5)
+    # bridge = Activation("swish")(c5)
     # Decoder with attention gates
     d1 = UpSampling2D((2, 2))(bridge)
     d1 = concatenate([d1, attention_gate(d1, c4, n_filters*8)])
@@ -356,7 +417,7 @@ def get_model(model_name, nClasses=1, input_height=256, input_width=256, n_filte
     
     
 # model = get_model(MODEL_NAME, input_height=IMAGE_SIZE[0], input_width=IMAGE_SIZE[1], n_filters=N_FILTERS, n_channels=N_CHANNELS)
-model = get_model(MODEL_NAME, input_height=256, input_width=256, n_filters=8, n_channels=N_CHANNELS)
+model = get_model(MODEL_NAME, input_height=256, input_width=256, n_filters=32, n_channels=N_CHANNELS)
 # model = models.att_unet_2d(input_size=(256,256,3), filter_num=[64, 128, 256, 512], n_labels=1, activation='ReLU', output_activation='Sigmoid', batch_norm=True, backbone='VGG16', weights='imagenet',)
 model.compile(
     'Adam',
@@ -386,8 +447,8 @@ model.fit_generator(
 )
 
 print('가중치 저장')
-model.save_weights('../resource/weights/kogn3.h5')
-print("저장된 가중치 명: kogn3.h5")
+model.save_weights('../resource/weights/sangn.h5')
+print("저장된 가중치 명: sangn.h5")
 
 y_pred_dict = {}
 
@@ -399,5 +460,5 @@ for i in test_meta['test_img']:
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './kogn3.pkl')
+joblib.dump(y_pred_dict, './sangn.pkl')
 print("done")

@@ -250,7 +250,7 @@ train_meta = pd.read_csv('../resource/dataset/train_meta.csv')
 test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
 
 #  저장 이름
-save_name = 'indian1b1p2'
+save_name = 'indian1b1p2_0322'
 
 N_FILTERS = 22 # 필터수 지정
 N_CHANNELS = 3 # channel 지정
@@ -275,10 +275,10 @@ EARLY_STOP_PATIENCE = 9
 
 # 중간 가중치 저장 이름
 CHECKPOINT_PERIOD = 1
-CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}indianswi1b1p2.hdf5'.format(MODEL_NAME, save_name)
+CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}indianswi1b1p2_0322.hdf5'.format(MODEL_NAME, save_name)
  
 # 최종 가중치 저장 이름
-FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_indianswi1b1p2.h5'.format(MODEL_NAME, save_name)
+FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_indianswi1b1p2_0322.h5'.format(MODEL_NAME, save_name)
 
 # 사용할 GPU 이름
 CUDA_DEVICE = 0
@@ -365,6 +365,6 @@ for i in test_meta['test_img']:
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './psp2.pkl')
+joblib.dump(y_pred_dict, './psp_0322.pkl')
 
 print('done')
