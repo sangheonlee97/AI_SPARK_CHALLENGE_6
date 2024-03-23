@@ -116,12 +116,12 @@ test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
 
 
 # 저장 이름
-save_name = 'sang765_f'
+save_name = 'sang765_f2'
 
 N_FILTERS = 16 # 필터수 지정
 N_CHANNELS = 3 # channel 지정
 EPOCHS = 200 # 훈련 epoch 지정
-BATCH_SIZE = 32 # batch size 지정
+BATCH_SIZE = 48 # batch size 지정
 IMAGE_SIZE = (256, 256) # 이미지 크기 지정
 MODEL_NAME = 'pretrained_attention_unet' # 모델 이름
 RANDOM_STATE = 42 # seed 고정
@@ -228,47 +228,6 @@ def attention_gate(F_g, F_l, inter_channel):
     # Apply the attention coefficients to the feature map from the skip connection
     return multiply([F_l, psi])
 
-from keras.applications import VGG16
-
-def mymodel(f):
-    inp = Input(shape=(256,256,3))
-    c1 = Conv2D(filters=f*1, kernel_size=(3, 3), padding='same',)(inp)
-    c1 = BatchNormalization()(c1)
-    c1 = Activation("swish")(c1)
-    c1 = Conv2D(filters=f*1, kernel_size=(3, 3), padding='same', )(c1)
-    c1 = BatchNormalization()(c1)
-    c1 = Activation("swish")(c1)
-    p1 = MaxPooling2D()(c1)
-    c2 = Conv2D(filters=f*2, kernel_size=(3, 3), padding='same', )(p1)
-    c2 = BatchNormalization()(c2)
-    c2 = Activation("swish")(c2)
-    c2 = Conv2D(filters=f*2, kernel_size=(3, 3), padding='same', )(c2)
-    c2 = BatchNormalization()(c2)
-    c2 = Activation("swish")(c2)
-    p2 = MaxPooling2D()(c2)
-    c3 = Conv2D(filters=f*4, kernel_size=(3, 3), padding='same', )(p2)
-    c3 = BatchNormalization()(c3)
-    c3 = Activation("swish")(c3)
-    c3 = Conv2D(filters=f*4, kernel_size=(3, 3), padding='same', )(c3)
-    c3 = BatchNormalization()(c3)
-    c3 = Activation("swish")(c3)
-    p3 = MaxPooling2D()(c3)
-    c4 = Conv2D(filters=f*8, kernel_size=(3, 3), padding='same', )(p3)
-    c4 = BatchNormalization()(c4)
-    c4 = Activation("swish")(c4)
-    c4 = Conv2D(filters=f*8, kernel_size=(3, 3), padding='same', )(c4)
-    c4 = BatchNormalization()(c4)
-    c4 = Activation("swish")(c4)
-    p4 = MaxPooling2D()(c4)
-    c5 = Conv2D(filters=f*16, kernel_size=(3, 3), padding='same', )(p4)
-    c5 = BatchNormalization()(c5)
-    c5 = Activation("swish")(c5)
-    c5 = Conv2D(filters=f*16, kernel_size=(3, 3), padding='same', )(c5)
-    c5 = BatchNormalization()(c5)
-    c5 = Activation("swish")(c5)
-    
-    
-    return model
 
 class SwishActivation(Layer):
     def __init__(self, **kwargs):
@@ -281,8 +240,6 @@ class SwishActivation(Layer):
         config = super().get_config()
         return config
 def conv_block(X, filters, block):
-    # Residual block with dilated convolutions
-    # Add skip connection at last after doing convolution operation to input X
 
     b = 'block_' + str(block) + '_'
     f1, f2, f3 = filters
@@ -345,7 +302,7 @@ def get_pretrained_attention_unet(input_height=256, input_width=256, nClasses=1,
     model = Model(inputs=[inp], outputs=[outputs])
     return model
 
-def get_model(model_name, nClasses=1, input_height=256, input_width=256, n_filters = 32, dropout = 0.1, batchnorm = True, n_channels=10):
+def get_model(model_name, nClasses=1, input_height=256, input_width=256, n_filters = 16, dropout = 0.1, batchnorm = True, n_channels=3):
     
     if model_name == 'pretrained_attention_unet':
         model = get_pretrained_attention_unet
@@ -377,9 +334,9 @@ es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STO
 mcp = ModelCheckpoint(monitor='val_loss', mode='min', verbose=1, save_best_only=True, filepath=CHECKPOINT_MODEL_NAME)
 rlr = ReduceLROnPlateau(
     monitor='val_loss',
-    patience=2,
+    patience=3,
     verbose=1,
-    factor=0.66
+    factor=0.5
 )
 
 model.fit_generator(
@@ -393,18 +350,18 @@ model.fit_generator(
 )
 
 print('가중치 저장')
-model.save_weights('../resource/weights/sangn765_f.h5')
-print("저장된 가중치 명: sangn765_f.h5")
+model.save_weights('../resource/weights/sangn765_f2.h5')
+print("저장된 가중치 명: sangn765_f2.h5")
 
 y_pred_dict = {}
 
 for i in test_meta['test_img']:
     img = get_img_762bands(f'../resource/dataset/test_img/{i}') # 나중에 여기도 preprocessing 해줘야되는데, 일단 가중치 저장하고 하자
-    y_pred = model.predict(np.array([img]), batch_size=1)
+    y_pred = model.predict(np.array([img]), batch_size=1, verbose=0)
     
     y_pred = np.where(y_pred[0, :, :, 0] > 0.25, 1, 0) # 임계값 처리
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './sangn765_f.pkl')
+joblib.dump(y_pred_dict, './sangn765_f2.pkl')
 print("done")

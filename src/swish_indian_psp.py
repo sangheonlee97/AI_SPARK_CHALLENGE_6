@@ -70,7 +70,7 @@ def get_img_arr(path):
     return img
 
 def get_img_762bands(path):
-    img = rasterio.open(path).read((7,6,2)).transpose((1, 2, 0))    
+    img = rasterio.open(path).read((7,6,5)).transpose((1, 2, 0))    
     img = np.float32(img)/MAX_PIXEL_VALUE
     
     return img
@@ -197,19 +197,19 @@ def pyramid_feature_maps(input_layer):
     # red
     red = GlobalAveragePooling2D(name='red_pool')(base)
     red = tf.keras.layers.Reshape((1,1,256))(red)
-    red = Convolution2D(filters=32,kernel_size=(1,1),name='red_1_by_1')(red)
+    red = Convolution2D(filters=64,kernel_size=(1,1),name='red_1_by_1')(red)
     red = UpSampling2D(size=256,interpolation='bilinear',name='red_upsampling')(red)
     # yellow
     yellow = AveragePooling2D(pool_size=(2,2),name='yellow_pool')(base)
-    yellow = Convolution2D(filters=32,kernel_size=(1,1),name='yellow_1_by_1')(yellow)
+    yellow = Convolution2D(filters=64,kernel_size=(1,1),name='yellow_1_by_1')(yellow)
     yellow = UpSampling2D(size=2,interpolation='bilinear',name='yellow_upsampling')(yellow)
     # blue
     blue = AveragePooling2D(pool_size=(4,4),name='blue_pool')(base)
-    blue = Convolution2D(filters=32,kernel_size=(1,1),name='blue_1_by_1')(blue)
+    blue = Convolution2D(filters=64,kernel_size=(1,1),name='blue_1_by_1')(blue)
     blue = UpSampling2D(size=4,interpolation='bilinear',name='blue_upsampling')(blue)
     # green
     green = AveragePooling2D(pool_size=(8,8),name='green_pool')(base)
-    green = Convolution2D(filters=32,kernel_size=(1,1),name='green_1_by_1')(green)
+    green = Convolution2D(filters=64,kernel_size=(1,1),name='green_1_by_1')(green)
     green = UpSampling2D(size=8,interpolation='bilinear',name='green_upsampling')(green)
     # base + red + yellow + blue + green
     return tf.keras.layers.concatenate([base,red,yellow,blue,green])
@@ -250,12 +250,12 @@ train_meta = pd.read_csv('../resource/dataset/train_meta.csv')
 test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
 
 #  저장 이름
-save_name = 'indian1b1p2_0322'
+save_name = 'psp0323'
 
 N_FILTERS = 22 # 필터수 지정
 N_CHANNELS = 3 # channel 지정
 EPOCHS = 1000 # 훈련 epoch 지정
-BATCH_SIZE = 12  # batch size 지정
+BATCH_SIZE = 8  # batch size 지정
 IMAGE_SIZE = (256, 256) # 이미지 크기 지정
 MODEL_NAME = 'psp' # 모델 이름
 RANDOM_STATE = 42 # seed 고정
@@ -270,15 +270,15 @@ OUTPUT_DIR = '../resource/weights/'
 WORKERS = -3
 
 # 조기종료
-EARLY_STOP_PATIENCE = 9
+EARLY_STOP_PATIENCE = 11
 
 
 # 중간 가중치 저장 이름
 CHECKPOINT_PERIOD = 1
-CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}indianswi1b1p2_0322.hdf5'.format(MODEL_NAME, save_name)
+CHECKPOINT_MODEL_NAME = 'checkpoint-{}-{}-epoch_{{epoch:02d}}indianswi1b1_0323.hdf5'.format(MODEL_NAME, save_name)
  
 # 최종 가중치 저장 이름
-FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_indianswi1b1p2_0322.h5'.format(MODEL_NAME, save_name)
+FINAL_WEIGHTS_OUTPUT = 'model_{}_{}_indianswi1b1_0323.h5'.format(MODEL_NAME, save_name)
 
 # 사용할 GPU 이름
 CUDA_DEVICE = 0
@@ -305,7 +305,7 @@ except:
 
 
 # train : val = 8 : 2 나누기
-x_tr, x_val = train_test_split(train_meta, test_size=0.2, random_state=RANDOM_STATE)
+x_tr, x_val = train_test_split(train_meta, test_size=0.1, random_state=RANDOM_STATE)
 print(len(x_tr), len(x_val))
 
 # train : val 지정 및 generator
@@ -328,10 +328,10 @@ checkpoint = ModelCheckpoint(os.path.join(OUTPUT_DIR, CHECKPOINT_MODEL_NAME), mo
 save_best_only=True)
 
 rlr = ReduceLROnPlateau(monitor='val_loss',             # 통상 early_stopping patience보다 작다
-                        patience=2,
+                        patience=4,
                         mode='min',
                         verbose=1,
-                        factor=0.7,
+                        factor=0.666,
                         # 통상 디폴트보다 높게 잡는다?
                         )
 
@@ -365,6 +365,6 @@ for i in test_meta['test_img']:
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './psp_0322.pkl')
+joblib.dump(y_pred_dict, './psp_0323.pkl')
 
 print('done')
