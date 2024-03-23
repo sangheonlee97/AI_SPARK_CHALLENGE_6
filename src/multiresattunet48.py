@@ -294,42 +294,42 @@ def MultiResUnet(height, width, n_channels):
 
     inputs = Input((height, width, n_channels))
 
-    mresblock1 = MultiResBlock(32, inputs)
+    mresblock1 = MultiResBlock(48, inputs)  # 수정
     pool1 = MaxPooling2D(pool_size=(2, 2))(mresblock1)
-    mresblock1 = ResPath(32, 4, mresblock1)
+    mresblock1 = ResPath(48, 4, mresblock1)  # 수정
 
-    mresblock2 = MultiResBlock(32*2, pool1)
+    mresblock2 = MultiResBlock(48*2, pool1)  # 수정
     pool2 = MaxPooling2D(pool_size=(2, 2))(mresblock2)
-    mresblock2 = ResPath(32*2, 3, mresblock2)
+    mresblock2 = ResPath(48*2, 3, mresblock2)  # 수정
 
-    mresblock3 = MultiResBlock(32*4, pool2)
+    mresblock3 = MultiResBlock(48*4, pool2)  # 수정
     pool3 = MaxPooling2D(pool_size=(2, 2))(mresblock3)
-    mresblock3 = ResPath(32*4, 2, mresblock3)
+    mresblock3 = ResPath(48*4, 2, mresblock3)  # 수정
 
-    mresblock4 = MultiResBlock(32*8, pool3)
+    mresblock4 = MultiResBlock(48*8, pool3)  # 수정
     pool4 = MaxPooling2D(pool_size=(2, 2))(mresblock4)
-    mresblock4 = ResPath(32*8, 1, mresblock4)
+    mresblock4 = ResPath(48*8, 1, mresblock4)  # 수정
 
-    mresblock5 = MultiResBlock(32*16, pool4)
-    
-    d1 = Conv2DTranspose(32*8, (2, 2), strides=(2, 2), padding='same')(mresblock5)
-    up6 = concatenate([d1, attention_gate(d1, mresblock4, 32*8)], axis=3)
-    mresblock6 = MultiResBlock(32*8, up6)
+    mresblock5 = MultiResBlock(48*16, pool4)  # 수정
 
-    d2 = Conv2DTranspose(32*4, (2, 2), strides=(2, 2), padding='same')(mresblock6)
-    up7 = concatenate([d2, attention_gate(d2, mresblock3, 32*4)], axis=3)
-    mresblock7 = MultiResBlock(32*4, up7)
+    d1 = Conv2DTranspose(48*8, (2, 2), strides=(2, 2), padding='same')(mresblock5)
+    up6 = concatenate([d1, attention_gate(d1, mresblock4, 48*8)], axis=3)
+    mresblock6 = MultiResBlock(48*8, up6)
 
-    d3 = Conv2DTranspose(32*2, (2, 2), strides=(2, 2), padding='same')(mresblock7)
-    up8 = concatenate([d3, attention_gate(d3, mresblock2, 32*2)], axis=3)
-    mresblock8 = MultiResBlock(32*2, up8)
+    d2 = Conv2DTranspose(48*4, (2, 2), strides=(2, 2), padding='same')(mresblock6)
+    up7 = concatenate([d2, attention_gate(d2, mresblock3, 48*4)], axis=3)
+    mresblock7 = MultiResBlock(48*4, up7)
 
-    d4 = Conv2DTranspose(32, (2, 2), strides=(2, 2), padding='same')(mresblock8)
-    up9 = concatenate([d4, attention_gate(d4, mresblock1, 32)], axis=3)
-    mresblock9 = MultiResBlock(32, up9)
+    d3 = Conv2DTranspose(48*2, (2, 2), strides=(2, 2), padding='same')(mresblock7)
+    up8 = concatenate([d3, attention_gate(d3, mresblock2, 48*2)], axis=3)
+    mresblock8 = MultiResBlock(48*2, up8)
+
+    d4 = Conv2DTranspose(48, (2, 2), strides=(2, 2), padding='same')(mresblock8)
+    up9 = concatenate([d4, attention_gate(d4, mresblock1, 48)], axis=3)
+    mresblock9 = MultiResBlock(48, up9)
 
     conv10 = conv2d_bn(mresblock9, 1, 1, 1, activation='sigmoid')
-    
+
     model = Model(inputs=[inputs], outputs=[conv10])
 
     return model
@@ -368,7 +368,7 @@ train_meta = pd.read_csv('../resource/dataset/train_meta.csv')
 test_meta = pd.read_csv('../resource/dataset/test_meta.csv')
 
 # 저장 이름
-save_name = 'ATT'
+save_name = 'ATT48'
 
 N_FILTERS = 16 # 필터수 지정
 N_CHANNELS = 3 # channel 지정
@@ -485,8 +485,8 @@ history = model.fit(
 print('---model 훈련 종료---')
 
 print('가중치 저장')
-model.save_weights('../resource/weights/multiresunetatt.h5')
-print("저장된 가중치 명: multiresunetatt.h5")
+model.save_weights('../resource/weights/multiresunetatt48.h5')
+print("저장된 가중치 명: multiresunetatt48.h5")
 
 y_pred_dict = {}
 
@@ -498,5 +498,5 @@ for i in test_meta['test_img']:
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './multiresunetatt.pkl')
+joblib.dump(y_pred_dict, './multiresunetatt48.pkl')
 print("done")
