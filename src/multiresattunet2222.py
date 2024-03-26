@@ -452,7 +452,7 @@ def miou(y_true, y_pred, smooth=1e-6):
     return miou
 
 # model 불러오기
-learning_rate = 0.001
+learning_rate = 0.0001
 model = MultiResUnet(height=IMAGE_SIZE[0], width=IMAGE_SIZE[1], n_channels=N_CHANNELS,)
 # optimizer = tfa.optimizers.AdamW(learning_rate=learning_rate, weight_decay=1e-4)  # 1e-4 = 0.0001
 optimizer = Adam(learning_rate=learning_rate)  # 1e-4 = 0.0001
@@ -469,7 +469,8 @@ es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=EARLY_STO
 checkpoint = ModelCheckpoint(os.path.join(OUTPUT_DIR, CHECKPOINT_MODEL_NAME), monitor='val_loss', verbose=1,
 save_best_only=True, mode='min')
 # Reduce
-rlr = ReduceLROnPlateau(monitor='val_loss', patience=4, factor=0.5, mode='min')
+rlr = ReduceLROnPlateau(monitor='val_loss', patience=2, factor=0.333, mode='min')
+model.load_weights('../resource/weights/multiresunetatt.h5')
 
 print('---model 훈련 시작---')
 history = model.fit(
@@ -485,8 +486,8 @@ history = model.fit(
 print('---model 훈련 종료---')
 
 print('가중치 저장')
-model.save_weights('../resource/weights/multiresunetatt.h5')
-print("저장된 가중치 명: multiresunetatt.h5")
+model.save_weights('../resource/weights/multiresunetatt2222.h5')
+print("저장된 가중치 명: multiresunetatt2222.h5")
 
 y_pred_dict = {}
 
@@ -498,5 +499,5 @@ for i in test_meta['test_img']:
     y_pred = y_pred.astype(np.uint8)
     y_pred_dict[i] = y_pred
 
-joblib.dump(y_pred_dict, './multiresunetatt.pkl')
+joblib.dump(y_pred_dict, './multiresunetatt2222.pkl')
 print("done")
